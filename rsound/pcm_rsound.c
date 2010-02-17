@@ -31,7 +31,7 @@
 #include <time.h>
 #include <unistd.h>
 
-typedef struct snd_pcm_oss {
+typedef struct snd_pcm_rsound {
    snd_pcm_ioplug_t io;
    int socket;
    char *host;
@@ -148,6 +148,7 @@ static int get_backend_info ( snd_pcm_rsound_t *rd )
 	buffer_size_temp = ntohl(buffer_size_temp);
 
 	int socket_buffer_size = (int)chunk_size_temp * 4;
+   //int socket_buffer_size = (int)buffer_size_temp;
 	if ( setsockopt(rd->socket, SOL_SOCKET, SO_SNDBUF, &socket_buffer_size, sizeof(int)) == -1 )
 	{
 		return 0;
@@ -162,6 +163,22 @@ static int get_backend_info ( snd_pcm_rsound_t *rd )
 	return 1;
 }
 
+static int rsound_stop(snd_pcm_ioplug_t *io)
+{
+   snd_pcm_rsound_t *rd = io->private_data;
+   
+   
+   close(rd->socket);
+   rd->socket = -1;
+   rd->has_written = 0;
+   rd->ready_for_data = 0;
+   rd->buffer_pointer = 0;
+   rd->has_written = 0;
+   rd->total_written = 0;
+
+   return 0;
+}
+
 static int create_connection(snd_pcm_rsound_t *rd)
 {
 	int rc;
@@ -169,28 +186,38 @@ static int create_connection(snd_pcm_rsound_t *rd)
    if ( rd->socket < 0 )
    {
       rc = connect_server(rd);
+      rd->io.poll_fd = rd->socket;
+      snd_pcm_ioplug_reinit_status(&rd->io);
       if (!rc)
+      {
+         close(rd->socket);
+         rd->socket = -1;
          return 0;
+      }
    }
    if ( !rd->ready_for_data )
    {
       rc = send_header_info(rd);
       if (!rc)
       {
+         rsound_stop(&rd->io);
          return 0;
       }
 
       rc = get_backend_info(rd);
       if (!rc)
       {
+         rsound_stop(&rd->io);
          return 0;
       }
 
-      rd->io.poll_fd = rd->socket;
-      snd_pcm_ioplug_reinit_status(&rd->io);
       rd->ready_for_data = 1;
    }
-	return 1;
+   
+   rd->io.poll_fd = rd->socket;
+   snd_pcm_ioplug_reinit_status(&rd->io);
+	
+   return 1;
 }
 
 static int send_chunk(snd_pcm_rsound_t *rd)
@@ -213,6 +240,8 @@ static int send_chunk(snd_pcm_rsound_t *rd)
 	return rc;
 }
 
+
+
 static void drain(snd_pcm_rsound_t *rd)
 {
 	if ( rd->has_written )
@@ -230,7 +259,7 @@ static void drain(snd_pcm_rsound_t *rd)
 		temp2 /= 1000000000;
 		temp += temp2;
 
-		rd->bytes_in_buffer = (int)(rd->total_written - temp);
+		rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
       /*if ( rd->bytes_in_buffer <= 0 )
       {
         // rd->total_written -= rd->bytes_in_buffer;
@@ -238,7 +267,7 @@ static void drain(snd_pcm_rsound_t *rd)
       }*/
 	}
 	else
-		rd->bytes_in_buffer = 0;
+		rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
 static int fill_buffer(snd_pcm_rsound_t *rd, char *buf, size_t size)
@@ -319,9 +348,13 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
                   snd_pcm_uframes_t size)
 {
   
+
    snd_pcm_rsound_t *rsound = io->private_data;
    size *= rsound->bytes_per_frame;
   
+   if ( size >= rsound->chunk_size )
+      fprintf(stderr, "Warning: %d > %d\n", (int)size, (int)rsound->chunk_size);
+
    const char *buf;
    ssize_t result;
 
@@ -340,8 +373,6 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    int ptr;
    /* This might be very wrong! */
    
-   
-//   ptr = (int)rsound->buffer_pointer;
    ptr = (int)(rsound->total_written + rsound->buffer_pointer);
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
    return ptr;
@@ -369,21 +400,7 @@ static int rsound_close(snd_pcm_ioplug_t *io)
 	return 0;
 }
 
-static int rsound_stop(snd_pcm_ioplug_t *io)
-{
-   snd_pcm_rsound_t *rd = io->private_data;
-   
-   
-   close(rd->socket);
-   rd->socket = -1;
-   rd->has_written = 0;
-   rd->ready_for_data = 0;
-   rd->buffer_pointer = 0;
-   rd->has_written = 0;
-   rd->total_written = 0;
 
-   return 0;
-}
 
 static int rsound_drain(snd_pcm_ioplug_t *io)
 {
@@ -452,10 +469,10 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 64*8)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 128*16)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 64 )) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 128 )) < 0 )
 		goto const_err;
 
    /*if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, ARRAY_SIZE(bytes_list), bytes_list) < 0))
@@ -464,7 +481,7 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
    if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, ARRAY_SIZE(bytes_list), bytes_list) < 0))
       goto const_err;*/
 
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 8)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 16)) < 0)
 		goto const_err;
 
 	return 0;
@@ -480,7 +497,7 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
    if ( rd->bytes_in_buffer < 0 )
       rd->bytes_in_buffer = 0;
    
-   *delayp = snd_pcm_bytes_to_frames(io->pcm, rd->bytes_in_buffer + rd->buffer_pointer);
+   *delayp = snd_pcm_bytes_to_frames(io->pcm, rd->bytes_in_buffer);
 
    return 0;
 }
