@@ -148,7 +148,6 @@ static int get_backend_info ( snd_pcm_rsound_t *rd )
 	buffer_size_temp = ntohl(buffer_size_temp);
 
 	int socket_buffer_size = (int)chunk_size_temp * 4;
-   //int socket_buffer_size = (int)buffer_size_temp;
 	if ( setsockopt(rd->socket, SOL_SOCKET, SO_SNDBUF, &socket_buffer_size, sizeof(int)) == -1 )
 	{
 		return 0;
@@ -228,7 +227,7 @@ static int send_chunk(snd_pcm_rsound_t *rd)
 		return 0;
 
    memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->chunk_size);
-   rd->buffer_pointer -= rd->chunk_size;
+   rd->buffer_pointer -= (int)rd->chunk_size;
    
 	
 	if ( !rd->has_written )
@@ -239,8 +238,6 @@ static int send_chunk(snd_pcm_rsound_t *rd)
 	rd->total_written += (uint64_t)rc;
 	return rc;
 }
-
-
 
 static void drain(snd_pcm_rsound_t *rd)
 {
@@ -260,12 +257,7 @@ static void drain(snd_pcm_rsound_t *rd)
 		temp += temp2;
 
 		rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
-      /*if ( rd->bytes_in_buffer <= 0 )
-      {
-        // rd->total_written -= rd->bytes_in_buffer;
-			rd->bytes_in_buffer = 0;
-      }*/
-	}
+   }
 	else
 		rd->bytes_in_buffer = rd->buffer_pointer;
 }
@@ -273,73 +265,29 @@ static void drain(snd_pcm_rsound_t *rd)
 static int fill_buffer(snd_pcm_rsound_t *rd, char *buf, size_t size)
 {
 	int rc;
-   char *temp_buffer = NULL;
+   int wrote = 0;
 
-// Fills up buffer if it's big enough.
-   if ( rd->buffer_pointer + size <= rd->buffer_size )
+// Makes sure we have enough space
+   while ( rd->buffer_pointer + (int)size > (int)rd->buffer_size )
 	{
-		memcpy(rd->buffer + rd->buffer_pointer, buf, size);
-		rd->buffer_pointer += size;
-	}
-
-// Oh, shit, we need to somehow hack around this unfortunate situation :\ Damn you apps that try to play so much data :D.
-// Might be really buggy :<
-	else
-	{
-
-
-      temp_buffer = malloc(size);
-      if (!temp_buffer)
-		   return 0;
-
-      memcpy(temp_buffer, buf, size);
-      int size_left = rd->buffer_size - rd->buffer_pointer;
-      memcpy(rd->buffer + rd->buffer_pointer, temp_buffer, size_left);
-      rd->buffer_pointer += size_left;
-      int temp_buf_ptr = size_left;
-
-      while ( temp_buf_ptr != (int)size  )
-      {
-         while ( rd->buffer_pointer >= (int)rd->chunk_size )
-         {
-            rc = send_chunk(rd);
-            if ( rc <= 0 )
-            {
-               free(temp_buffer);
-               return 0;
-            }
-         }
-         
-         size_left = rd->buffer_size - rd->buffer_pointer;
-         if ( temp_buf_ptr + size_left >= (int)size ) // We've managed to clear our buffer
-         {
-            memcpy(rd->buffer + rd->buffer_pointer, temp_buffer + temp_buf_ptr, size - temp_buf_ptr);
-            rd->buffer_pointer += size - temp_buf_ptr;
-            temp_buf_ptr = (int)size;
-         }
-         else
-         {
-            memcpy(rd->buffer + rd->buffer_pointer, temp_buffer + temp_buf_ptr, size_left);
-            rd->buffer_pointer += size_left;
-            temp_buf_ptr += size_left;
-         }
-
-      }
-
-
-	}
-
-// Empties the buffer as much as possible.
-   while ( rd->buffer_pointer >= (int)rd->chunk_size )
-	{
+      wrote = 1;
 		rc = send_chunk(rd);
 		if ( rc <= 0 )
-			break;
+			return 0;
 	}
-	
-   if ( temp_buffer != NULL )
-      free ( temp_buffer );
-	return size;
+
+   if ( !wrote && (rd->buffer_pointer >= (int)rd->chunk_size) )
+   {
+      rc = send_chunk(rd);
+      if ( rc <= 0 )
+         return 0;
+   }
+
+
+		memcpy(rd->buffer + rd->buffer_pointer, buf, size);
+		rd->buffer_pointer += (int)size;
+
+   return size;
 }
 
 static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
@@ -347,13 +295,9 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
                   snd_pcm_uframes_t offset,
                   snd_pcm_uframes_t size)
 {
-  
-
    snd_pcm_rsound_t *rsound = io->private_data;
    size *= rsound->bytes_per_frame;
   
-   if ( size >= rsound->chunk_size )
-      fprintf(stderr, "Warning: %d > %d\n", (int)size, (int)rsound->chunk_size);
 
    const char *buf;
    ssize_t result;
@@ -399,8 +343,6 @@ static int rsound_close(snd_pcm_ioplug_t *io)
    }
 	return 0;
 }
-
-
 
 static int rsound_drain(snd_pcm_ioplug_t *io)
 {
@@ -450,9 +392,6 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	static const snd_pcm_access_t access_list[] = { SND_PCM_ACCESS_RW_INTERLEAVED };
 
 	static const unsigned int formats[] = { SND_PCM_FORMAT_S16_LE };
-/*   static const unsigned int bytes_list[] = {
-      1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8 };
-  */ 
 
 	int err;
 	
@@ -468,20 +407,15 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
-	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 128*16)) < 0)
+   
+   // Appearantly, if alsa tries to play something that's larger than chunk_size, there's no sound :S Weird bug. 	
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 64*8)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 128 )) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 64 )) < 0 )
 		goto const_err;
 
-   /*if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, ARRAY_SIZE(bytes_list), bytes_list) < 0))
-      goto const_err;
-
-   if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, ARRAY_SIZE(bytes_list), bytes_list) < 0))
-      goto const_err;*/
-
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 16)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 8)) < 0)
 		goto const_err;
 
 	return 0;
