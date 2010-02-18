@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <math.h>
 
 typedef struct snd_pcm_rsound {
    snd_pcm_ioplug_t io;
@@ -185,8 +186,8 @@ static int create_connection(snd_pcm_rsound_t *rd)
    if ( rd->socket < 0 )
    {
       rc = connect_server(rd);
-      rd->io.poll_fd = rd->socket;
-      snd_pcm_ioplug_reinit_status(&rd->io);
+      //rd->io.poll_fd = rd->socket;
+      //snd_pcm_ioplug_reinit_status(&rd->io);
       if (!rc)
       {
          close(rd->socket);
@@ -213,8 +214,8 @@ static int create_connection(snd_pcm_rsound_t *rd)
       rd->ready_for_data = 1;
    }
    
-   rd->io.poll_fd = rd->socket;
-   snd_pcm_ioplug_reinit_status(&rd->io);
+   //rd->io.poll_fd = rd->socket;
+   //snd_pcm_ioplug_reinit_status(&rd->io);
 	
    return 1;
 }
@@ -262,7 +263,7 @@ static void drain(snd_pcm_rsound_t *rd)
 		rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
-static int fill_buffer(snd_pcm_rsound_t *rd, char *buf, size_t size)
+static int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
 	int rc;
    int wrote = 0;
@@ -297,13 +298,41 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    size *= rsound->bytes_per_frame;
-  
-
    const char *buf;
-   ssize_t result;
-
    buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
-   result = fill_buffer(rsound, (char*)buf, size);
+
+
+#if 1
+   int count;
+   short *temp;
+   int64_t sum = 0;
+   float db;
+   for ( count = 0; count < (int)size; count+=rsound->bytes_per_frame )
+   {
+      temp = (short*)&buf[count];
+      sum += (int)(*temp) * (int)(*temp);
+   }
+   sum /= size/rsound->bytes_per_frame;
+   db = sqrtf((float)sum);
+   db = 20.0*log10(db / ((float)0xFFFF / 2.0));
+   
+   int distance = (int)db + 40;
+   if (distance < 0)
+      distance = 0;
+
+   fputc('\r', stderr);
+   fputc('[', stderr);
+   for ( count = 0; count < distance; count++ )
+      fputc('*', stderr);
+   for ( count = 0; count < 40 - distance ; count++ )
+      fputc(' ', stderr);
+   fputc(']', stderr);
+   fprintf(stderr, " [[%6.2f dB]]", db);
+
+#endif
+
+   ssize_t result;
+   result = fill_buffer(rsound, buf, size);
    if ( result <= 0 )
    {
       rsound_stop(io);
@@ -523,7 +552,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->io.version = SND_PCM_IOPLUG_VERSION;
 	rsound->io.name = "ALSA <-> RSound output plugin";
 	rsound->io.mmap_rw = 0;
-   rsound->io.poll_fd = rsound->socket;
+   //rsound->io.poll_fd = rsound->socket;
+   rsound->io.poll_fd = 1;
    rsound->io.poll_events = POLLOUT;
 	rsound->io.callback = &rsound_playback_callback;
 	rsound->io.private_data = rsound;
