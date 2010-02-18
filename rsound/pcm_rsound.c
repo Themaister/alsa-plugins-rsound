@@ -284,8 +284,8 @@ static int fill_buffer(snd_pcm_rsound_t *rd, char *buf, size_t size)
    }
 
 
-		memcpy(rd->buffer + rd->buffer_pointer, buf, size);
-		rd->buffer_pointer += (int)size;
+   memcpy(rd->buffer + rd->buffer_pointer, buf, size);
+   rd->buffer_pointer += (int)size;
 
    return size;
 }
@@ -306,6 +306,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    result = fill_buffer(rsound, (char*)buf, size);
    if ( result <= 0 )
    {
+      rsound_stop(io);
       return -1;
    }
    return result / rsound->bytes_per_frame;
