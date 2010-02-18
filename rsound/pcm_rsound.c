@@ -263,7 +263,7 @@ static void drain(snd_pcm_rsound_t *rd)
 		rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
-static size_t fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
+static int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
 	int rc;
    int wrote = 0;
@@ -300,8 +300,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    const char *buf;
    buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
 
-
-#if 1
+#if 0
 
    int count;
    short *temp;
@@ -332,7 +331,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 #endif
 
    ssize_t result;
-   result = (ssize_t)fill_buffer(rsound, buf, size);
+   result = fill_buffer(rsound, buf, size);
    if ( result <= 0 )
    {
       rsound_stop(io);
@@ -439,13 +438,13 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 		goto const_err;
    
    // Appearantly, if alsa tries to play something that's larger than chunk_size, there's no sound :S Weird bug. 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 128*64)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 128*8)) < 0)
 		goto const_err;
 	
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 128 )) < 0 )
 		goto const_err;
 
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 64)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 8)) < 0)
 		goto const_err;
 
 	return 0;
