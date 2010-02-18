@@ -227,7 +227,7 @@ static int send_chunk(snd_pcm_rsound_t *rd)
 	if ( rc <= 0 )
 		return 0;
 
-   memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->chunk_size);
+   memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
    rd->buffer_pointer -= (int)rd->chunk_size;
    
 	
@@ -236,7 +236,7 @@ static int send_chunk(snd_pcm_rsound_t *rd)
 		clock_gettime(CLOCK_MONOTONIC, &rd->start_tv);
 		rd->has_written = 1;
 	}
-	rd->total_written += (uint64_t)rc;
+	rd->total_written += rc;
 	return rc;
 }
 
@@ -263,7 +263,7 @@ static void drain(snd_pcm_rsound_t *rd)
 		rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
-static int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
+static size_t fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
 	int rc;
    int wrote = 0;
@@ -284,7 +284,6 @@ static int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
          return 0;
    }
 
-
    memcpy(rd->buffer + rd->buffer_pointer, buf, size);
    rd->buffer_pointer += (int)size;
 
@@ -303,6 +302,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 
 
 #if 1
+
    int count;
    short *temp;
    int64_t sum = 0;
@@ -327,12 +327,12 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    for ( count = 0; count < 40 - distance ; count++ )
       fputc(' ', stderr);
    fputc(']', stderr);
-   fprintf(stderr, " [[%6.2f dB]]", db);
+   fprintf(stderr, " [[ %7.2f dB ]]", db);
 
 #endif
 
    ssize_t result;
-   result = fill_buffer(rsound, buf, size);
+   result = (ssize_t)fill_buffer(rsound, buf, size);
    if ( result <= 0 )
    {
       rsound_stop(io);
@@ -439,13 +439,13 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 		goto const_err;
    
    // Appearantly, if alsa tries to play something that's larger than chunk_size, there's no sound :S Weird bug. 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 64*8)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 32*2, 128*64)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 64 )) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 32, 128 )) < 0 )
 		goto const_err;
 
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 8)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 64)) < 0)
 		goto const_err;
 
 	return 0;
@@ -553,8 +553,9 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->io.name = "ALSA <-> RSound output plugin";
 	rsound->io.mmap_rw = 0;
    //rsound->io.poll_fd = rsound->socket;
-   rsound->io.poll_fd = 1;
-   rsound->io.poll_events = POLLOUT;
+//   rsound->io.poll_fd = 1;
+//   rsound->io.poll_events = POLLOUT;
+   rsound->io.poll_events = 0;
 	rsound->io.callback = &rsound_playback_callback;
 	rsound->io.private_data = rsound;
 
