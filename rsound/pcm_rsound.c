@@ -30,7 +30,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#include <math.h>
+//#include <math.h>
 #include <assert.h>
 
 #define ARRAY_SIZE(ary)	(sizeof(ary)/sizeof(ary[0]))
@@ -452,12 +452,12 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
    
    if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size) < 0))
 	{
-		fprintf(stderr, "Set buffer FAILED!!!!!!!\n");
+		fprintf(stderr, "Get buffer FAILED!!!!!!!\n");
       return err;
 	}
    if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
 	{
-		fprintf(stderr, "Set buffer FAILED!!!!!!!\n");
+		fprintf(stderr, "Get buffer FAILED!!!!!!!\n");
       return err;
 	}
 
