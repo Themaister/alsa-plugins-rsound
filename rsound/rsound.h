@@ -69,16 +69,22 @@ int get_backend_info ( snd_pcm_rsound_t *rd );
 
 int create_connection ( snd_pcm_rsound_t *rd );
 
-int send_chunk(snd_pcm_rsound_t *rd);
-
 void drain(snd_pcm_rsound_t *rd);
 
 int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size);
 
 int rsound_stop(snd_pcm_ioplug_t *io);
 
-ssize_t get_ptr( snd_pcm_rsound_t *rd );
+int get_ptr( snd_pcm_rsound_t *rd );
 
-ssize_t get_delay ( snd_pcm_rsound_t *rd );
+int get_delay ( snd_pcm_rsound_t *rd );
+
+int start_thread( snd_pcm_rsound_t *rd );
+
+int send_chunk (int socket, char* buf, size_t size);
+
+int stop_thread( snd_pcm_rsound_t *rd );
+
+
 
 #endif

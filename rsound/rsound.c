@@ -183,9 +183,7 @@ void drain(snd_pcm_rsound_t *rd)
 
 int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
-	int rc;
-
-   if ( !rd->thread_running )
+   if ( !rd->thread_active )
       return -1;
 
    pthread_mutex_lock(&rd->thread.mutex);
@@ -199,12 +197,12 @@ int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 int start_thread(snd_pcm_rsound_t *rd)
 {
    int rc;
-   if ( !thread_active )
+   if ( !rd->thread_active )
    {
       rc = pthread_create(&rd->thread.threadId, NULL, rsound_thread, rd);
       if ( rc != 0 )
          return 0;
-      thread_active = 1;
+      rd->thread_active = 1;
       return 1;
    }
    else
@@ -214,13 +212,13 @@ int start_thread(snd_pcm_rsound_t *rd)
 int stop_thread(snd_pcm_rsound_t *rd)
 {
    int rc;
-   if ( thread_active )
+   if ( rd->thread_active )
    {
       rc = pthread_cancel(rd->thread.threadId);
       pthread_mutex_unlock(&rd->thread.mutex);
       if ( rc != 0 )
          return 0;
-      thread_active = 0;
+      rd->thread_active = 0;
       return 1;
    }
    else
@@ -246,9 +244,9 @@ void* rsound_thread ( void * thread_data )
 // Plays back data as long as there is data in the buffer
    for (;;)
    {
-      while ( data->buffer_pointer >= data->chunk_size )
+      while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
-         rc = send_chunk(data->socket, data->buffer, data->chunk_size);
+         rc = send_chunk(rd->socket, rd->buffer, rd->chunk_size);
          if ( rc <= 0 )
          {
             rsound_stop(&rd->io);
