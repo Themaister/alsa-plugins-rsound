@@ -166,6 +166,8 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
    rsound->buffer_size = rsound->alsa_buffer_size;
 	rsound->alsa_fragsize *= rsound->bytes_per_frame;
 
+   fprintf(stderr, "Buffer %d frag %d\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
+
    return 0;
 }
 
@@ -274,6 +276,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->buffer_pointer = 0;
    rsound->ready_for_data = 0;
    rsound->thread_active = 0;
+   pthread_mutex_init(&rsound->thread.mutex, NULL);
 
 	err = snd_pcm_ioplug_create(&rsound->io, name, stream, mode);
 	if ( err < 0 )

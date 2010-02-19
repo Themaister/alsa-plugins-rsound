@@ -102,7 +102,7 @@ int get_backend_info ( snd_pcm_rsound_t *rd )
 
 	rd->chunk_size = chunk_size_temp;
 
-	rd->buffer = malloc ( rd->buffer_size );
+	rd->buffer = malloc ( rd->alsa_buffer_size );
 	rd->buffer_pointer = 0;
 
 	return 1;
@@ -153,6 +153,7 @@ int create_connection(snd_pcm_rsound_t *rd)
 
 int send_chunk(int socket, char* buf, size_t size)
 {
+   fprintf(stderr, "send_chunk ***\n");
 	int rc;
 	rc = send(socket, buf, size, 0);
 	return rc;
@@ -183,13 +184,29 @@ void drain(snd_pcm_rsound_t *rd)
 
 int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
+   fprintf(stderr, "Hai guise!\n");
    if ( !rd->thread_active )
       return -1;
 
+
+   while (1)
+   {
+      pthread_mutex_lock(&rd->thread.mutex);
+      if ( !(rd->buffer_pointer + (int)size > rd->buffer_size ) )
+      {
+         pthread_mutex_unlock(&rd->thread.mutex);
+         break;
+      }
+      pthread_mutex_unlock(&rd->thread.mutex);
+      usleep(100);
+   }
+
+   fprintf(stderr, "Buffer pointer %d size: %d\n", (int)rd->buffer_pointer, (int)size);
    pthread_mutex_lock(&rd->thread.mutex);
    memcpy(rd->buffer + rd->buffer_pointer, buf, size);
    rd->buffer_pointer += (int)size;
    pthread_mutex_unlock(&rd->thread.mutex);
+   fprintf(stderr, "I'm outta here.\n");
 
    return size;
 }
@@ -227,13 +244,20 @@ int stop_thread(snd_pcm_rsound_t *rd)
 
 int get_delay(snd_pcm_rsound_t *rd)
 {
+   pthread_mutex_lock(&rd->thread.mutex);
    drain(rd);
-   return rd->bytes_in_buffer;
+   int ptr = rd->bytes_in_buffer;
+   pthread_mutex_unlock(&rd->thread.mutex);
+   return ptr;
 }
 
 int get_ptr(snd_pcm_rsound_t *rd)
 {
-   return rd->buffer_pointer;
+
+   pthread_mutex_lock(&rd->thread.mutex);
+   int ptr = rd->buffer_pointer;
+   pthread_mutex_unlock(&rd->thread.mutex);
+   return ptr;
 }
 
 void* rsound_thread ( void * thread_data )
@@ -244,6 +268,7 @@ void* rsound_thread ( void * thread_data )
 // Plays back data as long as there is data in the buffer
    for (;;)
    {
+//      fprintf(stderr, "Hai guise. I'm in the thread.\n");
       while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
          rc = send_chunk(rd->socket, rd->buffer, rd->chunk_size);
@@ -255,6 +280,7 @@ void* rsound_thread ( void * thread_data )
 
          pthread_mutex_lock(&rd->thread.mutex);
          memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
+         rd->buffer_pointer -= (int)rd->chunk_size;
          pthread_mutex_unlock(&rd->thread.mutex);
 
          if ( !rd->has_written )
@@ -269,8 +295,6 @@ void* rsound_thread ( void * thread_data )
          rd->total_written += rc;
          pthread_mutex_unlock(&rd->thread.mutex);
       }
-      usleep(1000);
+      usleep(100);
    }
 }
-
-   
