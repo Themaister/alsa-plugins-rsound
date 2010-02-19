@@ -32,6 +32,8 @@
 #include <unistd.h>
 #include <math.h>
 
+#define ARRAY_SIZE(ary)	(sizeof(ary)/sizeof(ary[0]))
+
 typedef struct snd_pcm_rsound {
    snd_pcm_ioplug_t io;
    int socket;
@@ -265,27 +267,15 @@ static void drain(snd_pcm_rsound_t *rd)
 static int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
 	int rc;
-   int wrote = 0;
-
+   memcpy(rd->buffer + rd->buffer_pointer, buf, size);
+   rd->buffer_pointer += (int)size;
 // Makes sure we have enough space
-   while ( rd->buffer_pointer + (int)size > (int)rd->buffer_size )
+   while ( rd->buffer_pointer >= (int)rd->chunk_size )
 	{
-      wrote = 1;
 		rc = send_chunk(rd);
 		if ( rc <= 0 )
 			return 0;
 	}
-
-   if ( !wrote && (rd->buffer_pointer >= (int)rd->chunk_size) )
-   {
-      rc = send_chunk(rd);
-      if ( rc <= 0 )
-         return 0;
-   }
-
-   memcpy(rd->buffer + rd->buffer_pointer, buf, size);
-   rd->buffer_pointer += (int)size;
-
    return size;
 }
 
@@ -345,7 +335,11 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    int ptr;
    /* This might be very wrong! */
    
-   ptr = (int)(rsound->total_written + rsound->buffer_pointer);
+//   ptr = (int)(rsound->total_written + rsound->buffer_pointer);
+	drain(rsound);
+	ptr = (int)rsound->bytes_in_buffer;
+	if ( ptr > rsound->alsa_buffer_size )
+		ptr = rsound->alsa_buffer_size;
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
    return ptr;
 }
@@ -392,37 +386,6 @@ static int rsound_prepare(snd_pcm_ioplug_t *io)
    }
 }
 
-static int rsound_hw_params(snd_pcm_ioplug_t *io,
-               snd_pcm_hw_params_t *params)
-{
-	snd_pcm_rsound_t *rsound = io->private_data;
-
-	rsound->bytes_per_frame = (snd_pcm_format_physical_width(io->format) * io->channels) / 8;
-	if ( io->format != SND_PCM_FORMAT_S16_LE )
-	{
-		return -EINVAL;
-	}
-	if ( io->stream != SND_PCM_STREAM_PLAYBACK )
-	{
-		return -EINVAL;
-	}
-
-   int err;
-   if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size)) < 0)
-      return err;
-   if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
-      return err;
-
-   rsound->alsa_fragsize *= rsound->bytes_per_frame;
-   rsound->alsa_buffer_size *= rsound->bytes_per_frame;
-
-	rsound->rate = io->rate;
-	rsound->channels = io->channels;
-   return 0;
-}
-
-#define ARRAY_SIZE(ary)	(sizeof(ary)/sizeof(ary[0]))
-
 static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 {
 	snd_pcm_ioplug_t *io = &rsound->io;
@@ -445,19 +408,50 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
    
-   // Appearantly, if alsa tries to play something that's larger than chunk_size, there's no sound :S Weird bug. 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 64, 256*32)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 512*4, 4096*4)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 64, 256 )) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 512, 4096 )) < 0 )
 		goto const_err;
-
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 32)) < 0)
+	
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 4, 32)) < 0)
 		goto const_err;
 
 	return 0;
 const_err:
    return err;
+}
+
+static int rsound_hw_params(snd_pcm_ioplug_t *io,
+               snd_pcm_hw_params_t *params)
+{
+	snd_pcm_rsound_t *rsound = io->private_data;
+
+	rsound->bytes_per_frame = (snd_pcm_format_physical_width(io->format) * io->channels) / 8;
+	if ( io->format != SND_PCM_FORMAT_S16_LE )
+	{
+		return -EINVAL;
+	}
+	if ( io->stream != SND_PCM_STREAM_PLAYBACK )
+	{
+		return -EINVAL;
+	}
+
+	rsound->rate = io->rate;
+	rsound->channels = io->channels;
+	
+   int err;
+   
+   if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size) < 0))
+	{
+		fprintf(stderr, "Set buffer FAILED!!!!!!!\n");
+      return err;
+	}
+
+	rsound->alsa_buffer_size *= rsound->bytes_per_frame;
+
+	fprintf(stderr, "I got here!\n");
+   return 0;
 }
 
 static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
