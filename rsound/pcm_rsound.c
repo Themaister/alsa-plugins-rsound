@@ -31,6 +31,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <math.h>
+#include <assert.h>
 
 #define ARRAY_SIZE(ary)	(sizeof(ary)/sizeof(ary[0]))
 
@@ -153,6 +154,8 @@ static int get_backend_info ( snd_pcm_rsound_t *rd )
 	buffer_size_temp = ntohl(buffer_size_temp);
 
 	int socket_buffer_size = (int)chunk_size_temp * 4;
+	//int socket_buffer_size = (buffer_size_temp/chunk_size_temp >= 8 ) ? (int)buffer_size_temp - (int)chunk_size_temp : (int)buffer_size_temp;
+
 	if ( setsockopt(rd->socket, SOL_SOCKET, SO_SNDBUF, &socket_buffer_size, sizeof(int)) == -1 )
 	{
 		return 0;
@@ -190,8 +193,8 @@ static int create_connection(snd_pcm_rsound_t *rd)
    if ( rd->socket < 0 )
    {
       rc = connect_server(rd);
-      rd->io.poll_fd = rd->socket;
-      snd_pcm_ioplug_reinit_status(&rd->io);
+//      rd->io.poll_fd = rd->socket;
+  //    snd_pcm_ioplug_reinit_status(&rd->io);
       if (!rc)
       {
          close(rd->socket);
@@ -289,6 +292,8 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    const char *buf;
    buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
 
+	assert(rsound->buffer_size >= rsound->alsa_buffer_size);
+
 #if 0
 
    int count;
@@ -340,6 +345,9 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
 	ptr = (int)rsound->bytes_in_buffer;
 	if ( ptr > rsound->alsa_buffer_size )
 		ptr = rsound->alsa_buffer_size;
+	if ( ptr < 0 )
+		ptr = 0;
+	
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
    return ptr;
 }
@@ -408,13 +416,13 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
    
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 512*4, 4096*4)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 4096, 4096*4)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 512, 4096 )) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 64, 2048 )) < 0 )
 		goto const_err;
 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 4, 32)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 4, 8)) < 0)
 		goto const_err;
 
 	return 0;
@@ -447,10 +455,16 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 		fprintf(stderr, "Set buffer FAILED!!!!!!!\n");
       return err;
 	}
+   if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
+	{
+		fprintf(stderr, "Set buffer FAILED!!!!!!!\n");
+      return err;
+	}
 
 	rsound->alsa_buffer_size *= rsound->bytes_per_frame;
+	rsound->alsa_fragsize *= rsound->bytes_per_frame;
 
-	fprintf(stderr, "I got here!\n");
+	fprintf(stderr, "Fragsize: %d, Buffersize: %d\n", (int)rsound->alsa_fragsize, (int)rsound->alsa_buffer_size);
    return 0;
 }
 
@@ -553,9 +567,9 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->io.version = SND_PCM_IOPLUG_VERSION;
 	rsound->io.name = "ALSA <-> RSound output plugin";
 	rsound->io.mmap_rw = 0;
-   rsound->io.poll_fd = rsound->socket;
+//   rsound->io.poll_fd = rsound->socket;
 //   rsound->io.poll_fd = 1;
-   rsound->io.poll_events = POLLOUT;
+ //  rsound->io.poll_events = POLLOUT;
 //   rsound->io.poll_events = 0;
 	rsound->io.callback = &rsound_playback_callback;
 	rsound->io.private_data = rsound;
