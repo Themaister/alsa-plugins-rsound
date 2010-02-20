@@ -19,6 +19,8 @@ typedef struct rsound_thread
 {
    pthread_t threadId;
    pthread_mutex_t mutex;
+   pthread_mutex_t cond_mutex;
+   pthread_cond_t cond;
 
 } rsound_thread_t;
 

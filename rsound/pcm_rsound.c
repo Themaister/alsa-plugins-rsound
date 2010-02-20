@@ -135,7 +135,7 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 8, 1 << 16)) < 0 )
 		goto const_err;
 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 4, 1024)) < 0)
 		goto const_err;
 
 	return 0;
@@ -165,18 +165,20 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
    
    if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size) < 0))
 	{
-      fprintf(stderr, "Error get buffer!\n");
+      fprintf(stderr, "Error getting buffer!\n");
       return err;
 	}
    if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
 	{
-      fprintf(stderr, "Error get period!\n");
+      fprintf(stderr, "Error getting period!\n");
       return err;
 	}
 
 	rsound->alsa_buffer_size *= rsound->bytes_per_frame;
-   rsound->buffer_size = rsound->alsa_buffer_size;
+   rsound->buffer_size = rsound->alsa_buffer_size * 2;
 	rsound->alsa_fragsize *= rsound->bytes_per_frame;
+
+   fprintf(stderr, "ALSA ::\n\t Buffer size: %d bytes\n\t Period size: %d bytes\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
 
    return 0;
 }
@@ -288,7 +290,10 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->buffer_pointer = 0;
    rsound->ready_for_data = 0;
    rsound->thread_active = 0;
+   rsound->buffer = NULL;
    pthread_mutex_init(&rsound->thread.mutex, NULL);
+   pthread_mutex_init(&rsound->thread.cond_mutex, NULL);
+   pthread_cond_init(&rsound->thread.cond, NULL);
 
 	err = snd_pcm_ioplug_create(&rsound->io, name, stream, mode);
 	if ( err < 0 )

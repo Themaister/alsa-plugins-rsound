@@ -104,8 +104,8 @@ int rsnd_get_backend_info ( snd_pcm_rsound_t *rd )
 
 	rd->chunk_size = chunk_size_temp;
 
-   rd->buffer_size = rd->alsa_buffer_size * 2;
-	rd->buffer = malloc ( rd->buffer_size );
+   // So we can write to the buffer with fill_buffer and don't have to wait.
+	rd->buffer = realloc ( rd->buffer, rd->buffer_size );
 	rd->buffer_pointer = 0;
 
 	return 1;
@@ -191,22 +191,30 @@ int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
       return -1;
    }
 
+   // Wait until we have a ready buffer
    for (;;)
    {
       pthread_mutex_lock(&rd->thread.mutex);
-      if ( !(rd->buffer_pointer + (int)size > (int)rd->buffer_size ) )
+      if (rd->buffer_pointer + (int)size <= (int)rd->buffer_size)
       {
          pthread_mutex_unlock(&rd->thread.mutex);
          break;
       }
       pthread_mutex_unlock(&rd->thread.mutex);
-      usleep(10);
+
+      // get signal from thread to check again
+      pthread_mutex_lock(&rd->thread.cond_mutex);
+      pthread_cond_wait(&rd->thread.cond, &rd->thread.cond_mutex);
+      pthread_mutex_unlock(&rd->thread.cond_mutex);
    }
 
    pthread_mutex_lock(&rd->thread.mutex);
    memcpy(rd->buffer + rd->buffer_pointer, buf, size);
    rd->buffer_pointer += (int)size;
    pthread_mutex_unlock(&rd->thread.mutex);
+
+   // send signal to thread that buffer has been updated
+   pthread_cond_signal(&rd->thread.cond);
 
    return size;
 }
@@ -233,6 +241,7 @@ int rsnd_stop_thread(snd_pcm_rsound_t *rd)
    {
       rc = pthread_cancel(rd->thread.threadId);
       pthread_mutex_unlock(&rd->thread.mutex);
+      pthread_mutex_unlock(&rd->thread.cond_mutex);
       if ( rc != 0 )
          return 0;
       rd->thread_active = 0;
@@ -257,6 +266,10 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
    pthread_mutex_lock(&rd->thread.mutex);
    int ptr = rd->buffer_pointer;
    pthread_mutex_unlock(&rd->thread.mutex);
+
+  // ptr = (ptr/rd->alsa_fragsize)*rd->alsa_fragsize;
+   fprintf(stderr, "ptr = %d\n", (int)ptr);
+
    return ptr;
 }
 
@@ -274,6 +287,7 @@ void* rsnd_thread ( void * thread_data )
          if ( rc <= 0 )
          {
             rsound_stop(&rd->io);
+            // Buffer has terminated, signal fill_buffer
             pthread_exit(NULL);
          }
 
@@ -281,6 +295,9 @@ void* rsnd_thread ( void * thread_data )
          memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
          rd->buffer_pointer -= (int)rd->chunk_size;
          pthread_mutex_unlock(&rd->thread.mutex);
+
+         // Buffer has decreased, signal fill_buffer
+         pthread_cond_signal(&rd->thread.cond);
 
          if ( !rd->has_written )
          {
@@ -295,6 +312,9 @@ void* rsnd_thread ( void * thread_data )
          pthread_mutex_unlock(&rd->thread.mutex);
          
       }
-      usleep(100);
+      // Wait for the buffer to be filled
+      pthread_mutex_lock(&rd->thread.cond_mutex);
+      pthread_cond_wait(&rd->thread.cond, &rd->thread.cond_mutex);
+      pthread_mutex_unlock(&rd->thread.cond_mutex);
    }
 }
