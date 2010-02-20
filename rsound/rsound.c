@@ -154,7 +154,6 @@ int create_connection(snd_pcm_rsound_t *rd)
 
 int send_chunk(int socket, char* buf, size_t size)
 {
-   //fprintf(stderr, "send_chunk ***\n");
 	int rc;
 	rc = send(socket, buf, size, 0);
 	return rc;
@@ -185,14 +184,14 @@ void drain(snd_pcm_rsound_t *rd)
 
 int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
-   //fprintf(stderr, "Hai guise! Expected to play %d bytes\n", (int)size);
    if ( !rd->thread_active )
    {
-      //fprintf(stderr, "fill_buffer returned -1\n");
       return -1;
    }
 
-   //fprintf(stderr, "I got here!\n");
+   if ( rd->total_written == 0 )
+      clock_gettime(CLOCK_MONOTONIC, &rd->start_tv);
+
    for (;;)
    {
       pthread_mutex_lock(&rd->thread.mutex);
@@ -202,15 +201,13 @@ int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
          break;
       }
       pthread_mutex_unlock(&rd->thread.mutex);
-      usleep(100);
+      usleep(10);
    }
 
-   //fprintf(stderr, "Buffer pointer %d size: %d\n", (int)rd->buffer_pointer, (int)size);
    pthread_mutex_lock(&rd->thread.mutex);
    memcpy(rd->buffer + rd->buffer_pointer, buf, size);
    rd->buffer_pointer += (int)size;
    pthread_mutex_unlock(&rd->thread.mutex);
-   //fprintf(stderr, "I'm outta here.\n");
 
    return size;
 }
@@ -251,7 +248,6 @@ int get_delay(snd_pcm_rsound_t *rd)
    pthread_mutex_lock(&rd->thread.mutex);
    drain(rd);
    int ptr = rd->bytes_in_buffer;
-   //fprintf(stderr, "Delay is %d bytes.\n", ptr);
    pthread_mutex_unlock(&rd->thread.mutex);
    return ptr;
 }
@@ -269,11 +265,10 @@ void* rsound_thread ( void * thread_data )
 {
    snd_pcm_rsound_t *rd = thread_data;
    int rc;
-
+   
 // Plays back data as long as there is data in the buffer
    for (;;)
    {
-//      fprintf(stderr, "Hai guise. I'm in the thread.\n");
       while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
          rc = send_chunk(rd->socket, rd->buffer, rd->chunk_size);
@@ -290,7 +285,6 @@ void* rsound_thread ( void * thread_data )
 
          if ( !rd->has_written )
          {
-            clock_gettime(CLOCK_MONOTONIC, &rd->start_tv);
             pthread_mutex_lock(&rd->thread.mutex);
             rd->has_written = 1;
             pthread_mutex_unlock(&rd->thread.mutex);
@@ -299,6 +293,7 @@ void* rsound_thread ( void * thread_data )
          pthread_mutex_lock(&rd->thread.mutex);
          rd->total_written += rc;
          pthread_mutex_unlock(&rd->thread.mutex);
+         
       }
       usleep(100);
    }
