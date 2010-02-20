@@ -49,7 +49,9 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
 
    ssize_t result;
+   //fprintf(stderr, "doing fill_buffer: %d bytes\n", (int)size);
    result = fill_buffer(rsound, buf, size);
+   //fprintf(stderr, "ended fill_buffer: %d bytes\n", (int)size);
    if ( result <= 0 )
    {
       rsound_stop(io);
@@ -64,6 +66,8 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    int ptr;
    
    ptr = get_ptr(rsound);	
+   if ( ptr > rsound->alsa_buffer_size )
+      ptr = rsound->alsa_buffer_size;
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
    return ptr;
 }
@@ -166,7 +170,7 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
    rsound->buffer_size = rsound->alsa_buffer_size;
 	rsound->alsa_fragsize *= rsound->bytes_per_frame;
 
-   fprintf(stderr, "Buffer %d frag %d\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
+   //fprintf(stderr, "Buffer %d frag %d\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
 
    return 0;
 }
@@ -176,6 +180,8 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
    snd_pcm_rsound_t *rd = io->private_data;
 
    int ptr = get_delay(rd);
+   if ( ptr < 0 )
+      ptr = 0;
    
    *delayp = snd_pcm_bytes_to_frames(io->pcm, ptr);
 

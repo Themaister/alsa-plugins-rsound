@@ -102,7 +102,8 @@ int get_backend_info ( snd_pcm_rsound_t *rd )
 
 	rd->chunk_size = chunk_size_temp;
 
-	rd->buffer = malloc ( rd->alsa_buffer_size );
+   rd->buffer_size = rd->alsa_buffer_size * 2;
+	rd->buffer = malloc ( rd->buffer_size );
 	rd->buffer_pointer = 0;
 
 	return 1;
@@ -153,7 +154,7 @@ int create_connection(snd_pcm_rsound_t *rd)
 
 int send_chunk(int socket, char* buf, size_t size)
 {
-   fprintf(stderr, "send_chunk ***\n");
+   //fprintf(stderr, "send_chunk ***\n");
 	int rc;
 	rc = send(socket, buf, size, 0);
 	return rc;
@@ -184,15 +185,18 @@ void drain(snd_pcm_rsound_t *rd)
 
 int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
-   fprintf(stderr, "Hai guise!\n");
+   //fprintf(stderr, "Hai guise! Expected to play %d bytes\n", (int)size);
    if ( !rd->thread_active )
+   {
+      //fprintf(stderr, "fill_buffer returned -1\n");
       return -1;
+   }
 
-
-   while (1)
+   //fprintf(stderr, "I got here!\n");
+   for (;;)
    {
       pthread_mutex_lock(&rd->thread.mutex);
-      if ( !(rd->buffer_pointer + (int)size > rd->buffer_size ) )
+      if ( !(rd->buffer_pointer + (int)size > (int)rd->buffer_size ) )
       {
          pthread_mutex_unlock(&rd->thread.mutex);
          break;
@@ -201,12 +205,12 @@ int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
       usleep(100);
    }
 
-   fprintf(stderr, "Buffer pointer %d size: %d\n", (int)rd->buffer_pointer, (int)size);
+   //fprintf(stderr, "Buffer pointer %d size: %d\n", (int)rd->buffer_pointer, (int)size);
    pthread_mutex_lock(&rd->thread.mutex);
    memcpy(rd->buffer + rd->buffer_pointer, buf, size);
    rd->buffer_pointer += (int)size;
    pthread_mutex_unlock(&rd->thread.mutex);
-   fprintf(stderr, "I'm outta here.\n");
+   //fprintf(stderr, "I'm outta here.\n");
 
    return size;
 }
@@ -247,6 +251,7 @@ int get_delay(snd_pcm_rsound_t *rd)
    pthread_mutex_lock(&rd->thread.mutex);
    drain(rd);
    int ptr = rd->bytes_in_buffer;
+   //fprintf(stderr, "Delay is %d bytes.\n", ptr);
    pthread_mutex_unlock(&rd->thread.mutex);
    return ptr;
 }
