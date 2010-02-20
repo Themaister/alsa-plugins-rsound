@@ -260,7 +260,7 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
    return ptr;
 }
 
-void* rsnd_rsound_thread ( void * thread_data )
+void* rsnd_thread ( void * thread_data )
 {
    snd_pcm_rsound_t *rd = thread_data;
    int rc;
