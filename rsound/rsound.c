@@ -267,7 +267,7 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
    int ptr = rd->buffer_pointer;
    pthread_mutex_unlock(&rd->thread.mutex);
 
-   fprintf(stderr, "ptr = %d\n", (int)ptr);
+   //fprintf(stderr, "ptr = %d\n", (int)ptr);
 
    return ptr;
 }

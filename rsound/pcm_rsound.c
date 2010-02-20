@@ -66,7 +66,7 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    snd_pcm_rsound_t *rsound = io->private_data;
    int ptr;
    
-   fprintf(stderr, "io->buffer_size: %d, io->period_size %d, io->hw_ptr %d, io->appl_ptr %d\n", (int)io->buffer_size, (int)io->period_size, (int)io->hw_ptr, (int)io->appl_ptr); 
+   //fprintf(stderr, "io->buffer_size: %d, io->period_size %d, io->hw_ptr %d, io->appl_ptr %d\n", (int)io->buffer_size, (int)io->period_size, (int)io->hw_ptr, (int)io->appl_ptr); 
    
    ptr = rsnd_get_ptr(rsound);	
    if ( ptr > (int)rsound->alsa_buffer_size )
@@ -170,20 +170,20 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
    
    if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size) < 0))
 	{
-      fprintf(stderr, "Error getting buffer!\n");
+      //fprintf(stderr, "Error getting buffer!\n");
       return err;
 	}
    if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
 	{
-      fprintf(stderr, "Error getting period!\n");
+      //fprintf(stderr, "Error getting period!\n");
       return err;
 	}
 
 	rsound->alsa_buffer_size *= rsound->bytes_per_frame;
-   rsound->buffer_size = rsound->alsa_buffer_size * 2;
+   rsound->buffer_size = rsound->alsa_buffer_size;
 	rsound->alsa_fragsize *= rsound->bytes_per_frame;
 
-   fprintf(stderr, "ALSA ::\n\t Buffer size: %d bytes\n\t Period size: %d bytes\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
+   //fprintf(stderr, "ALSA ::\n\t Buffer size: %d bytes\n\t Period size: %d bytes\n", (int)rsound->alsa_buffer_size, (int)rsound->alsa_fragsize);
 
    return 0;
 }
