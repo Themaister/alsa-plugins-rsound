@@ -195,7 +195,7 @@ int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
    for (;;)
    {
       pthread_mutex_lock(&rd->thread.mutex);
-      if (rd->buffer_pointer + (int)size <= (int)rd->buffer_size)
+      if (rd->buffer_pointer + (int)size <= (int)rd->alsa_buffer_size  )
       {
          pthread_mutex_unlock(&rd->thread.mutex);
          break;
@@ -267,7 +267,6 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
    int ptr = rd->buffer_pointer;
    pthread_mutex_unlock(&rd->thread.mutex);
 
-  // ptr = (ptr/rd->alsa_fragsize)*rd->alsa_fragsize;
    fprintf(stderr, "ptr = %d\n", (int)ptr);
 
    return ptr;

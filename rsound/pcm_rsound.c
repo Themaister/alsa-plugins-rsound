@@ -66,11 +66,16 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    snd_pcm_rsound_t *rsound = io->private_data;
    int ptr;
    
+   fprintf(stderr, "io->buffer_size: %d, io->period_size %d, io->hw_ptr %d, io->appl_ptr %d\n", (int)io->buffer_size, (int)io->period_size, (int)io->hw_ptr, (int)io->appl_ptr); 
+   
    ptr = rsnd_get_ptr(rsound);	
-
    if ( ptr > (int)rsound->alsa_buffer_size )
       ptr = rsound->alsa_buffer_size;
+   
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
+
+   ptr = io->appl_ptr - ptr;
+
    return ptr;
 }
 
