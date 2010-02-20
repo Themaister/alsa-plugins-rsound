@@ -52,39 +52,34 @@ typedef struct snd_pcm_rsound {
 
 } snd_pcm_rsound_t;
 
+// Thread
+void* rsnd_thread (void *thread_data);
 
-void* rsound_thread (void *thread_data);
+// Cool utils
+int rsnd_is_little_endian(void);
+void rsnd_swap_endian_16 ( uint16_t * x );
+void rsnd_swap_endian_32 ( uint32_t * x );
 
-int is_little_endian(void);
+// RSound related
+int rsnd_connect_server ( snd_pcm_rsound_t *rd );
+int rsnd_create_connection ( snd_pcm_rsound_t *rd );
+int rsnd_send_header_info ( snd_pcm_rsound_t *rd );
+int rsnd_get_backend_info ( snd_pcm_rsound_t *rd );
 
-void swap_endian_16 ( uint16_t * x );
+// Cool stuff
+void rsnd_drain(snd_pcm_rsound_t *rd);
+int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size);
+int rsnd_send_chunk (int socket, char* buf, size_t size);
 
-void swap_endian_32 ( uint32_t * x );
+// ALSA callbacks
+int rsnd_get_ptr( snd_pcm_rsound_t *rd );
+int rsnd_get_delay ( snd_pcm_rsound_t *rd );
 
-int connect_server ( snd_pcm_rsound_t *rd );
-
-int send_header_info ( snd_pcm_rsound_t *rd );
-
-int get_backend_info ( snd_pcm_rsound_t *rd );
-
-int create_connection ( snd_pcm_rsound_t *rd );
-
-void drain(snd_pcm_rsound_t *rd);
-
-int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size);
-
+// I/O callback
 int rsound_stop(snd_pcm_ioplug_t *io);
 
-int get_ptr( snd_pcm_rsound_t *rd );
-
-int get_delay ( snd_pcm_rsound_t *rd );
-
-int start_thread( snd_pcm_rsound_t *rd );
-
-int send_chunk (int socket, char* buf, size_t size);
-
-int stop_thread( snd_pcm_rsound_t *rd );
-
-
+// Dirty work inc.
+int rsnd_start_thread( snd_pcm_rsound_t *rd );
+int rsnd_stop_thread( snd_pcm_rsound_t *rd );
 
 #endif

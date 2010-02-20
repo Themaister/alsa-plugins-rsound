@@ -1,17 +1,19 @@
 #include "rsound.h"
 
-int is_little_endian(void)
+#define DEBUG(x) fprintf(stderr, x);
+
+int rsnd_is_little_endian(void)
 {
 	uint16_t i = 1;
 	return *((uint8_t*)&i);
 }
 
-void swap_endian_16 ( uint16_t * x )
+void rsnd_swap_endian_16 ( uint16_t * x )
 {
 	*x = (*x>>8) | (*x<<8);
 }
 
-void swap_endian_32 ( uint32_t * x )
+void rsnd_swap_endian_32 ( uint32_t * x )
 {
 	*x = 	(*x >> 24 ) |
 			((*x<<8) & 0x00FF0000) |
@@ -19,7 +21,7 @@ void swap_endian_32 ( uint32_t * x )
 			(*x << 24);
 }
 
-int connect_server( snd_pcm_rsound_t *rd )
+int rsnd_connect_server( snd_pcm_rsound_t *rd )
 {
 	struct addrinfo hints, *res;
 	memset(&hints, 0, sizeof( hints ));
@@ -39,7 +41,7 @@ int connect_server( snd_pcm_rsound_t *rd )
 	return 1;
 }
 
-int send_header_info(snd_pcm_rsound_t *rd)
+int rsnd_send_header_info(snd_pcm_rsound_t *rd)
 {
 #define HEADER_SIZE 44
 	char buffer[HEADER_SIZE] = {0};
@@ -53,11 +55,11 @@ int send_header_info(snd_pcm_rsound_t *rd)
 	uint16_t channels_temp = rd->channels;
 	uint16_t framesize_temp = 16;
 
-	if ( !is_little_endian() )
+	if ( !rsnd_is_little_endian() )
 	{
-		swap_endian_32(&sample_rate_temp);
-		swap_endian_16(&channels_temp);
-		swap_endian_16(&framesize_temp);
+		rsnd_swap_endian_32(&sample_rate_temp);
+		rsnd_swap_endian_16(&channels_temp);
+		rsnd_swap_endian_16(&framesize_temp);
 	}
 
 	*((uint32_t*)(buffer+RATE)) = sample_rate_temp;
@@ -73,7 +75,7 @@ int send_header_info(snd_pcm_rsound_t *rd)
 	return 1;
 }
 
-int get_backend_info ( snd_pcm_rsound_t *rd )
+int rsnd_get_backend_info ( snd_pcm_rsound_t *rd )
 {
 	uint32_t chunk_size_temp, buffer_size_temp;
 	int rc;
@@ -108,13 +110,13 @@ int get_backend_info ( snd_pcm_rsound_t *rd )
 
 	return 1;
 }
-int create_connection(snd_pcm_rsound_t *rd)
+int rsnd_create_connection(snd_pcm_rsound_t *rd)
 {
 	int rc;
 
    if ( rd->socket < 0 )
    {
-      rc = connect_server(rd);
+      rc = rsnd_connect_server(rd);
       rd->io.poll_fd = rd->socket;
       snd_pcm_ioplug_reinit_status(&rd->io);
       if (!rc)
@@ -126,14 +128,14 @@ int create_connection(snd_pcm_rsound_t *rd)
    }
    if ( !rd->ready_for_data )
    {
-      rc = send_header_info(rd);
+      rc = rsnd_send_header_info(rd);
       if (!rc)
       {
          rsound_stop(&rd->io);
          return 0;
       }
 
-      rc = get_backend_info(rd);
+      rc = rsnd_get_backend_info(rd);
       if (!rc)
       {
          rsound_stop(&rd->io);
@@ -141,7 +143,7 @@ int create_connection(snd_pcm_rsound_t *rd)
       }
 
       rd->ready_for_data = 1;
-      rc = start_thread(rd);
+      rc = rsnd_start_thread(rd);
       if ( !rc )
       {
          rsound_stop(&rd->io);
@@ -152,14 +154,14 @@ int create_connection(snd_pcm_rsound_t *rd)
    return 1;
 }
 
-int send_chunk(int socket, char* buf, size_t size)
+int rsnd_send_chunk(int socket, char* buf, size_t size)
 {
 	int rc;
 	rc = send(socket, buf, size, 0);
 	return rc;
 }
 
-void drain(snd_pcm_rsound_t *rd)
+void rsnd_drain(snd_pcm_rsound_t *rd)
 {
 	if ( rd->has_written )
 	{
@@ -182,15 +184,12 @@ void drain(snd_pcm_rsound_t *rd)
 		rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
-int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
+int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
    if ( !rd->thread_active )
    {
       return -1;
    }
-
-   if ( rd->total_written == 0 )
-      clock_gettime(CLOCK_MONOTONIC, &rd->start_tv);
 
    for (;;)
    {
@@ -212,12 +211,12 @@ int fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
    return size;
 }
 
-int start_thread(snd_pcm_rsound_t *rd)
+int rsnd_start_thread(snd_pcm_rsound_t *rd)
 {
    int rc;
    if ( !rd->thread_active )
    {
-      rc = pthread_create(&rd->thread.threadId, NULL, rsound_thread, rd);
+      rc = pthread_create(&rd->thread.threadId, NULL, rsnd_thread, rd);
       if ( rc != 0 )
          return 0;
       rd->thread_active = 1;
@@ -227,7 +226,7 @@ int start_thread(snd_pcm_rsound_t *rd)
       return 1;
 }
 
-int stop_thread(snd_pcm_rsound_t *rd)
+int rsnd_stop_thread(snd_pcm_rsound_t *rd)
 {
    int rc;
    if ( rd->thread_active )
@@ -243,16 +242,16 @@ int stop_thread(snd_pcm_rsound_t *rd)
       return 1;
 }
 
-int get_delay(snd_pcm_rsound_t *rd)
+int rsnd_get_delay(snd_pcm_rsound_t *rd)
 {
    pthread_mutex_lock(&rd->thread.mutex);
-   drain(rd);
+   rsnd_drain(rd);
    int ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
    return ptr;
 }
 
-int get_ptr(snd_pcm_rsound_t *rd)
+int rsnd_get_ptr(snd_pcm_rsound_t *rd)
 {
 
    pthread_mutex_lock(&rd->thread.mutex);
@@ -261,7 +260,7 @@ int get_ptr(snd_pcm_rsound_t *rd)
    return ptr;
 }
 
-void* rsound_thread ( void * thread_data )
+void* rsnd_rsound_thread ( void * thread_data )
 {
    snd_pcm_rsound_t *rd = thread_data;
    int rc;
@@ -271,7 +270,7 @@ void* rsound_thread ( void * thread_data )
    {
       while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
-         rc = send_chunk(rd->socket, rd->buffer, rd->chunk_size);
+         rc = rsnd_send_chunk(rd->socket, rd->buffer, rd->chunk_size);
          if ( rc <= 0 )
          {
             rsound_stop(&rd->io);
@@ -286,6 +285,7 @@ void* rsound_thread ( void * thread_data )
          if ( !rd->has_written )
          {
             pthread_mutex_lock(&rd->thread.mutex);
+            clock_gettime(CLOCK_MONOTONIC, &rd->start_tv);
             rd->has_written = 1;
             pthread_mutex_unlock(&rd->thread.mutex);
          }
