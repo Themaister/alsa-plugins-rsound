@@ -2,11 +2,6 @@
 
 #define DEBUG(x) fprintf(stderr, x);
 
-enum {
-   RSND_DELAY = 0,
-   RSND_PTR 
-};
-
 int rsnd_is_little_endian(void)
 {
 	uint16_t i = 1;
@@ -101,28 +96,12 @@ int rsnd_get_backend_info ( snd_pcm_rsound_t *rd )
 	chunk_size_temp = ntohl(chunk_size_temp);
 	buffer_size_temp = ntohl(buffer_size_temp);
 
-   int socket_buffer_size;
+   rd->chunk_size = chunk_size_temp;
 
-   if ( rd->alsa_buffer_size >= buffer_size_temp )
-   {
-      if ( chunk_size_temp >= 2048 )
-         socket_buffer_size = chunk_size_temp;
-      else
-         socket_buffer_size = 2048;
-   }
-   else
-      socket_buffer_size = buffer_size_temp;
+   int send_buffer_size = (int)buffer_size_temp;
+   if ( setsockopt( rd->socket, SOL_SOCKET, SO_SNDBUF, &send_buffer_size, sizeof(int)) == -1 )
+      return 0;
 
-	//int socket_buffer_size = (int)chunk_size_temp > 2048 ? (int)chunk_size_temp : 2048;
-   //int socket_buffer_size = buffer_size_temp > 8*chunk_size_temp ? (int)(buffer_size_temp - chunk_size_temp) : (int)buffer_size_temp;
-	if ( setsockopt(rd->socket, SOL_SOCKET, SO_SNDBUF, &socket_buffer_size, sizeof(int)) == -1 )
-	{
-		return 0;
-	}
-
-	rd->chunk_size = chunk_size_temp;
-
-   // So we can write to the buffer with fill_buffer and don't have to wait.
 	rd->buffer = realloc ( rd->buffer, rd->buffer_size );
 	rd->buffer_pointer = 0;
 
@@ -180,7 +159,7 @@ int rsnd_send_chunk(int socket, char* buf, size_t size)
 	return rc;
 }
 
-void rsnd_drain(snd_pcm_rsound_t *rd, int type)
+void rsnd_drain(snd_pcm_rsound_t *rd)
 {
 	if ( rd->has_written )
 	{
@@ -197,18 +176,14 @@ void rsnd_drain(snd_pcm_rsound_t *rd, int type)
 		temp2 /= 1000000000;
 		temp += temp2;
 
-      if ( type == RSND_DELAY )
-         rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
-      else
-         rd->bytes_in_buffer = (int)((int64_t)rd->total_written - temp);
+      rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
    }
 	else
-		rd->bytes_in_buffer = rd->buffer_pointer;
+      rd->bytes_in_buffer = rd->buffer_pointer;
 }
 
 int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
-   //fprintf(stderr, "%d bytes\n", (int)size);
    if ( !rd->thread_active )
    {
       return -1;
@@ -278,7 +253,7 @@ int rsnd_stop_thread(snd_pcm_rsound_t *rd)
 int rsnd_get_delay(snd_pcm_rsound_t *rd)
 {
    pthread_mutex_lock(&rd->thread.mutex);
-   rsnd_drain(rd, RSND_DELAY);
+   rsnd_drain(rd);
    int ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
    return ptr;
@@ -289,15 +264,13 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
 
    pthread_mutex_lock(&rd->thread.mutex);
    int ptr = rd->buffer_pointer;
-   rsnd_drain(rd, RSND_PTR);
-   int server_ptr = rd->bytes_in_buffer;
+   //rsnd_drain(rd);
+   //int server_ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
 
-   ptr = (server_ptr > ptr) ? server_ptr : ptr;
-   if ( ptr > (int)rd->alsa_buffer_size )
-      ptr = rd->alsa_buffer_size;
-
-   //fprintf(stderr, "ptr = %d\n", (int)ptr);
+   //ptr = (server_ptr > ptr) ? server_ptr : ptr;
+   //if ( ptr > (int)rd->alsa_buffer_size )
+   //   ptr = rd->alsa_buffer_size;
 
    return ptr;
 }
@@ -306,12 +279,21 @@ void* rsnd_thread ( void * thread_data )
 {
    snd_pcm_rsound_t *rd = thread_data;
    int rc;
-   
+   struct timespec now;
+   int nsecs;
+
+   struct pollfd fd[1];
+   fd[0].fd = rd->socket;
+   fd[0].events = POLLOUT;
+
 // Plays back data as long as there is data in the buffer
    for (;;)
    {
       while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
+         // Makes sure that we are not blocking.
+         poll(fd, 1, 1000);
+
          rc = rsnd_send_chunk(rd->socket, rd->buffer, rd->chunk_size);
          if ( rc <= 0 )
          {
@@ -339,11 +321,20 @@ void* rsnd_thread ( void * thread_data )
          pthread_mutex_lock(&rd->thread.mutex);
          rd->total_written += rc;
          pthread_mutex_unlock(&rd->thread.mutex);
-         
+                 
       }
-      // Wait for the buffer to be filled
+      // Wait for the buffer to be filled. Test at least every 5ms.
+      clock_gettime(CLOCK_REALTIME, &now);
+      nsecs = 5000;      
+      now.tv_nsec += nsecs;
+      if ( now.tv_nsec >= 1000000000 )
+      {
+         now.tv_sec++;
+         now.tv_nsec -= 1000000000;
+      }
+
       pthread_mutex_lock(&rd->thread.cond_mutex);
-      pthread_cond_wait(&rd->thread.cond, &rd->thread.cond_mutex);
+      pthread_cond_timedwait(&rd->thread.cond, &rd->thread.cond_mutex, &now);
       pthread_mutex_unlock(&rd->thread.cond_mutex);
    }
 }
