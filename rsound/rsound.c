@@ -268,7 +268,13 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
 
    pthread_mutex_lock(&rd->thread.mutex);
    int ptr = rd->buffer_pointer;
+   rsnd_drain(rd);
+   int server_ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
+
+   ptr = (server_ptr > ptr) ? server_ptr : ptr;
+   if ( ptr > (int)rd->alsa_buffer_size )
+      ptr = rd->alsa_buffer_size;
 
    //fprintf(stderr, "ptr = %d\n", (int)ptr);
 
