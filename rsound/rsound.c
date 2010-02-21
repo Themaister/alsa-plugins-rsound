@@ -143,6 +143,7 @@ int rsnd_create_connection(snd_pcm_rsound_t *rd)
       }
 
       rd->ready_for_data = 1;
+      rd->last_ptr = 0;
       rc = rsnd_start_thread(rd);
       if ( !rc )
       {
@@ -186,6 +187,7 @@ void rsnd_drain(snd_pcm_rsound_t *rd)
 
 int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size)
 {
+   //fprintf(stderr, "%d bytes\n", (int)size);
    if ( !rd->thread_active )
    {
       return -1;
@@ -240,6 +242,7 @@ int rsnd_stop_thread(snd_pcm_rsound_t *rd)
    if ( rd->thread_active )
    {
       rc = pthread_cancel(rd->thread.threadId);
+      pthread_join(rd->thread.threadId, NULL);
       pthread_mutex_unlock(&rd->thread.mutex);
       pthread_mutex_unlock(&rd->thread.cond_mutex);
       if ( rc != 0 )

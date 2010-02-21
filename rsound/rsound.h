@@ -49,6 +49,7 @@ typedef struct snd_pcm_rsound {
 
    snd_pcm_uframes_t alsa_buffer_size;
    snd_pcm_uframes_t alsa_fragsize;
+   snd_pcm_uframes_t last_ptr;
 
    rsound_thread_t thread;
 
