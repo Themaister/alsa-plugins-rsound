@@ -2,6 +2,11 @@
 
 #define DEBUG(x) fprintf(stderr, x);
 
+enum {
+   RSND_DELAY = 0,
+   RSND_PTR 
+};
+
 int rsnd_is_little_endian(void)
 {
 	uint16_t i = 1;
@@ -96,7 +101,20 @@ int rsnd_get_backend_info ( snd_pcm_rsound_t *rd )
 	chunk_size_temp = ntohl(chunk_size_temp);
 	buffer_size_temp = ntohl(buffer_size_temp);
 
-	int socket_buffer_size = (int)chunk_size_temp * 4;
+   int socket_buffer_size;
+
+   if ( rd->alsa_buffer_size >= buffer_size_temp )
+   {
+      if ( chunk_size_temp >= 2048 )
+         socket_buffer_size = chunk_size_temp;
+      else
+         socket_buffer_size = 2048;
+   }
+   else
+      socket_buffer_size = buffer_size_temp;
+
+	//int socket_buffer_size = (int)chunk_size_temp > 2048 ? (int)chunk_size_temp : 2048;
+   //int socket_buffer_size = buffer_size_temp > 8*chunk_size_temp ? (int)(buffer_size_temp - chunk_size_temp) : (int)buffer_size_temp;
 	if ( setsockopt(rd->socket, SOL_SOCKET, SO_SNDBUF, &socket_buffer_size, sizeof(int)) == -1 )
 	{
 		return 0;
@@ -162,7 +180,7 @@ int rsnd_send_chunk(int socket, char* buf, size_t size)
 	return rc;
 }
 
-void rsnd_drain(snd_pcm_rsound_t *rd)
+void rsnd_drain(snd_pcm_rsound_t *rd, int type)
 {
 	if ( rd->has_written )
 	{
@@ -179,7 +197,10 @@ void rsnd_drain(snd_pcm_rsound_t *rd)
 		temp2 /= 1000000000;
 		temp += temp2;
 
-		rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
+      if ( type == RSND_DELAY )
+         rd->bytes_in_buffer = (int)((int64_t)rd->total_written + (int64_t)rd->buffer_pointer - temp);
+      else
+         rd->bytes_in_buffer = (int)((int64_t)rd->total_written - temp);
    }
 	else
 		rd->bytes_in_buffer = rd->buffer_pointer;
@@ -257,7 +278,7 @@ int rsnd_stop_thread(snd_pcm_rsound_t *rd)
 int rsnd_get_delay(snd_pcm_rsound_t *rd)
 {
    pthread_mutex_lock(&rd->thread.mutex);
-   rsnd_drain(rd);
+   rsnd_drain(rd, RSND_DELAY);
    int ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
    return ptr;
@@ -268,7 +289,7 @@ int rsnd_get_ptr(snd_pcm_rsound_t *rd)
 
    pthread_mutex_lock(&rd->thread.mutex);
    int ptr = rd->buffer_pointer;
-   rsnd_drain(rd);
+   rsnd_drain(rd, RSND_PTR);
    int server_ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
 

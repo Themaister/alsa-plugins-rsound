@@ -70,7 +70,7 @@ int rsnd_send_header_info ( snd_pcm_rsound_t *rd );
 int rsnd_get_backend_info ( snd_pcm_rsound_t *rd );
 
 // Cool stuff
-void rsnd_drain(snd_pcm_rsound_t *rd);
+void rsnd_drain(snd_pcm_rsound_t *rd, int type);
 int rsnd_fill_buffer(snd_pcm_rsound_t *rd, const char *buf, size_t size);
 int rsnd_send_chunk (int socket, char* buf, size_t size);
 
