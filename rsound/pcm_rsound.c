@@ -104,8 +104,6 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    return ptr;
 }
 
-
-
 static int rsound_close(snd_pcm_ioplug_t *io)
 {
 	snd_pcm_rsound_t *rsound = io->private_data;
@@ -209,6 +207,22 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
    return 0;
 }
 
+static int rsound_drain(snd_pcm_ioplug_t *io)
+{
+   rsound_stop(io);
+   rsound_start(io);
+   return 0;
+}
+
+static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
+{
+   if ( !enable )
+      rsound_start(io);
+   else
+      rsound_stop(io);
+   return 0;
+}
+
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.start = rsound_start,
 	.stop = rsound_stop,
@@ -217,7 +231,9 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.close = rsound_close,
    .delay = rsound_delay,
 	.hw_params = rsound_hw_params,
-	.prepare = rsound_prepare
+	.prepare = rsound_prepare,
+   .drain = rsound_drain,
+   .pause = rsound_pause
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
