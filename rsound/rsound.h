@@ -14,6 +14,13 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <poll.h>
+
+typedef struct connection
+{
+   int socket;
+   int ctl_socket;
+} connection_t;
 
 typedef struct rsound_thread
 {
@@ -26,7 +33,7 @@ typedef struct rsound_thread
 
 typedef struct snd_pcm_rsound {
    snd_pcm_ioplug_t io;
-   int socket;
+   connection_t conn;
    char *host;
    char *port;
    char *buffer;

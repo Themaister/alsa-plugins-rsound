@@ -28,8 +28,15 @@ int rsound_stop(snd_pcm_ioplug_t *io)
    snd_pcm_rsound_t *rd = io->private_data;
    
    rsnd_stop_thread(rd);
-   close(rd->socket);
-   rd->socket = -1;
+
+   const char buf[] = "CLOSE";
+
+   send(rd->conn.ctl_socket, buf, 5, 0);
+   close(rd->conn.ctl_socket);
+   close(rd->conn.socket);
+   
+   rd->conn.socket = -1;
+   rd->conn.ctl_socket = -1;
    rd->has_written = 0;
    rd->ready_for_data = 0;
    rd->buffer_pointer = 0;
@@ -142,10 +149,10 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 26)) < 0)
 		goto const_err;
 	
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 8, 1 << 16)) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 8, 1 << 13)) < 0 )
 		goto const_err;
 	
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 4, 1024)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
 		goto const_err;
 
 	return 0;
@@ -276,7 +283,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 		return -ENOMEM;
 	}
 
-   rsound->socket = -1;
+   rsound->conn.socket = -1;
+   rsound->conn.socket = -1;
    err = rsnd_connect_server(rsound);
    if ( err != 1 )
    {
@@ -287,7 +295,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	rsound->io.version = SND_PCM_IOPLUG_VERSION;
 	rsound->io.name = "ALSA <-> RSound output plugin";
 	rsound->io.mmap_rw = 0;
-   rsound->io.poll_fd = rsound->socket;
+   rsound->io.poll_fd = rsound->conn.socket;
    rsound->io.poll_events = POLLOUT;
 	rsound->io.callback = &rsound_playback_callback;
 	rsound->io.private_data = rsound;

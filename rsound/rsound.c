@@ -30,12 +30,20 @@ int rsnd_connect_server( snd_pcm_rsound_t *rd )
    
    getaddrinfo(rd->host, rd->port, &hints, &res);
 
-	rd->socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	rd->conn.socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+   rd->conn.ctl_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
-	if ( connect(rd->socket, res->ai_addr, res->ai_addrlen) != 0 )
-	{
+	if ( connect(rd->conn.socket, res->ai_addr, res->ai_addrlen) != 0 )
 		return 0;
-	}
+
+	if ( connect(rd->conn.ctl_socket, res->ai_addr, res->ai_addrlen) != 0 )
+		return 0;
+
+   if ( fcntl(rd->conn.socket, F_SETFL, O_NONBLOCK) < 0)
+   {
+      fprintf(stderr, "Couldn't set socket to non-blocking ...\n");
+      return 0;
+   }
 
 	freeaddrinfo(res);
 	return 1;
@@ -65,10 +73,30 @@ int rsnd_send_header_info(snd_pcm_rsound_t *rd)
 	*((uint32_t*)(buffer+RATE)) = sample_rate_temp;
 	*((uint16_t*)(buffer+CHANNEL)) = channels_temp;
 	*((uint16_t*)(buffer+FRAMESIZE)) = framesize_temp;
-	rc = send ( rd->socket, buffer, HEADER_SIZE, 0);
+
+   struct pollfd fd;
+   fd.fd = rd->conn.socket;
+   fd.events = POLLOUT;
+
+   if ( poll(&fd, 1, 500) < 0 )
+   {
+		close(rd->conn.socket);
+		close(rd->conn.ctl_socket);
+      return 0;
+   }
+
+   if (fd.revents & POLLHUP )
+   {
+		close(rd->conn.socket);
+		close(rd->conn.ctl_socket);
+      return 0;
+   }
+
+	rc = send ( rd->conn.socket, buffer, HEADER_SIZE, 0);
 	if ( rc != HEADER_SIZE )
 	{
-		close(rd->socket);
+		close(rd->conn.socket);
+		close(rd->conn.ctl_socket);
 		return 0;
 	}
 
@@ -77,30 +105,38 @@ int rsnd_send_header_info(snd_pcm_rsound_t *rd)
 
 int rsnd_get_backend_info ( snd_pcm_rsound_t *rd )
 {
-	uint32_t chunk_size_temp, buffer_size_temp;
+	uint32_t chunk_size_temp;
 	int rc;
 
-	rc = recv(rd->socket, &chunk_size_temp, sizeof(uint32_t), 0);
+   struct pollfd fd;
+   fd.fd = rd->conn.socket;
+   fd.events = POLLIN;
+
+   if ( poll(&fd, 1, 500) < 0 )
+   {
+      close(rd->conn.socket);
+      close(rd->conn.ctl_socket);
+      return 0;
+   }
+
+   if ( fd.revents & POLLHUP )
+   {
+      close(rd->conn.socket);
+      close(rd->conn.ctl_socket);
+      return 0;
+   }
+
+	rc = recv(rd->conn.socket, &chunk_size_temp, sizeof(uint32_t), 0);
 	if ( rc != sizeof(uint32_t))
 	{
-		close(rd->socket);
-		return 0;
-	}
-	rc = recv(rd->socket, &buffer_size_temp, sizeof(uint32_t), 0);
-	if ( rc != sizeof(uint32_t))
-   {
-		close(rd->socket);
+		close(rd->conn.socket);
+      close(rd->conn.ctl_socket);
 		return 0;
 	}
 
 	chunk_size_temp = ntohl(chunk_size_temp);
-	buffer_size_temp = ntohl(buffer_size_temp);
 
    rd->chunk_size = chunk_size_temp;
-
-   int send_buffer_size = (int)buffer_size_temp;
-   if ( setsockopt( rd->socket, SOL_SOCKET, SO_SNDBUF, &send_buffer_size, sizeof(int)) == -1 )
-      return 0;
 
 	rd->buffer = realloc ( rd->buffer, rd->buffer_size );
 	rd->buffer_pointer = 0;
@@ -111,15 +147,17 @@ int rsnd_create_connection(snd_pcm_rsound_t *rd)
 {
 	int rc;
 
-   if ( rd->socket < 0 )
+   if ( rd->conn.socket < 0 && rd->conn.ctl_socket < 0 )
    {
       rc = rsnd_connect_server(rd);
-      rd->io.poll_fd = rd->socket;
+      rd->io.poll_fd = rd->conn.socket;
       snd_pcm_ioplug_reinit_status(&rd->io);
       if (!rc)
       {
-         close(rd->socket);
-         rd->socket = -1;
+         close(rd->conn.socket);
+         close(rd->conn.ctl_socket);
+         rd->conn.socket = -1;
+         rd->conn.ctl_socket = -1;
          return 0;
       }
    }
@@ -154,9 +192,29 @@ int rsnd_create_connection(snd_pcm_rsound_t *rd)
 
 int rsnd_send_chunk(int socket, char* buf, size_t size)
 {
-	int rc;
-	rc = send(socket, buf, size, 0);
-	return rc;
+	int rc = 0;
+   size_t wrote = 0;
+   size_t send_size = 0;
+   struct pollfd fd;
+   fd.fd = socket;
+   fd.events = POLLOUT;
+
+   while ( wrote < size )
+   {
+      if ( poll(&fd, 1, 500) < 0 )
+         return 0;
+
+      if ( fd.revents & POLLHUP )
+         return 0;
+
+      send_size = (size - wrote) > 1024 ? 1024 : size - wrote;
+	   rc = send(socket, buf + wrote, send_size, 0);
+      if ( rc <= 0 )
+         return 0;
+
+      wrote += rc;
+   }
+	return wrote;
 }
 
 void rsnd_drain(snd_pcm_rsound_t *rd)
@@ -282,34 +340,19 @@ void* rsnd_thread ( void * thread_data )
    struct timespec now;
    int nsecs;
 
-   struct pollfd fd[1];
-   fd[0].fd = rd->socket;
-   fd[0].events = POLLOUT;
-
 // Plays back data as long as there is data in the buffer
    for (;;)
    {
       while ( rd->buffer_pointer >= (int)rd->chunk_size )
       {
-         // Makes sure that we are not blocking.
-         poll(fd, 1, 1000);
-
-         rc = rsnd_send_chunk(rd->socket, rd->buffer, rd->chunk_size);
+         rc = rsnd_send_chunk(rd->conn.socket, rd->buffer, rd->chunk_size);
          if ( rc <= 0 )
          {
             rsound_stop(&rd->io);
             // Buffer has terminated, signal fill_buffer
             pthread_exit(NULL);
          }
-
-         pthread_mutex_lock(&rd->thread.mutex);
-         memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
-         rd->buffer_pointer -= (int)rd->chunk_size;
-         pthread_mutex_unlock(&rd->thread.mutex);
-
-         // Buffer has decreased, signal fill_buffer
-         pthread_cond_signal(&rd->thread.cond);
-
+         
          if ( !rd->has_written )
          {
             pthread_mutex_lock(&rd->thread.mutex);
@@ -321,7 +364,16 @@ void* rsnd_thread ( void * thread_data )
          pthread_mutex_lock(&rd->thread.mutex);
          rd->total_written += rc;
          pthread_mutex_unlock(&rd->thread.mutex);
-                 
+
+         pthread_mutex_lock(&rd->thread.mutex);
+         memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
+         rd->buffer_pointer -= (int)rd->chunk_size;
+         pthread_mutex_unlock(&rd->thread.mutex);
+
+         // Buffer has decreased, signal fill_buffer
+         pthread_cond_signal(&rd->thread.cond);
+
+                          
       }
       // Wait for the buffer to be filled. Test at least every 5ms.
       clock_gettime(CLOCK_REALTIME, &now);
