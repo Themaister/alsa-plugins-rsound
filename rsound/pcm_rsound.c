@@ -300,7 +300,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	}
 
    rsound->conn.socket = -1;
-   rsound->conn.socket = -1;
+   rsound->conn.ctl_socket = -1;
    err = rsnd_connect_server(rsound);
    if ( err != 1 )
    {
