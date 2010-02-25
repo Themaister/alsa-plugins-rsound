@@ -19,30 +19,20 @@
  */
 
 #include "rsound.h"
+#include <alsa/asoundlib.h>
+#include <alsa/pcm_external.h>
 
-#define ARRAY_SIZE(ary)	(sizeof(ary)/sizeof(ary[0]))
-#define DEBUG(x) fprintf(stderr, x);
+typedef struct snd_pcm_rsound
+{
+   rsound_t *rd;
+   snd_pcm_uframes_t last_ptr;
+   snd_pcm_ioplug_t io;
+} snd_pcm_rsound_t;
 
 int rsound_stop(snd_pcm_ioplug_t *io)
 {
-   snd_pcm_rsound_t *rd = io->private_data;
-   
-   rsnd_stop_thread(rd);
-
-   const char buf[] = "CLOSE";
-
-   send(rd->conn.ctl_socket, buf, 5, 0);
-   close(rd->conn.ctl_socket);
-   close(rd->conn.socket);
-   
-   rd->conn.socket = -1;
-   rd->conn.ctl_socket = -1;
-   rd->has_written = 0;
-   rd->ready_for_data = 0;
-   rd->buffer_pointer = 0;
-   rd->has_written = 0;
-   rd->total_written = 0;
-
+   snd_pcm_rsound_t *rsound = io->private_data;
+   rsd_stop(rsound->rd);
    return 0;
 }
 
@@ -52,35 +42,30 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
                   snd_pcm_uframes_t size)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
-   size *= rsound->bytes_per_frame;
-   const char *buf;
-   buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
+   const char *buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
+   size *= io->channels * 2;
 
-   ssize_t result;
-   
-   result = rsnd_fill_buffer(rsound, buf, size);
-
+   ssize_t result = rsd_write(rsound->rd, buf, size);
    if ( result <= 0 )
    {
-      rsound_stop(io);
+      rsd_stop(rsound->rd);
       return -1;
    }
-   return result / rsound->bytes_per_frame;
+   return result / (io->channels * 2);
 }
 
 static int rsound_start(snd_pcm_ioplug_t *io)
 {
+   int rc;
    snd_pcm_rsound_t *rsound = io->private_data;
-	rsound->channels = (uint32_t)io->channels;
-	rsound->rate = (uint32_t)io->rate;
-   if ( rsnd_create_connection(rsound) )
-   {
-      return 0;
-   }
-   else
-   {
-      return -1;
-   }
+   rc = rsd_start(rsound->rd);
+   if ( rc < 0 )
+      return rc;
+
+   io->poll_fd = rsound->rd->conn.socket;
+   io->poll_events = POLLOUT;
+   snd_pcm_ioplug_reinit_status(io);
+   return 0;
 }
 
 static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
@@ -90,11 +75,11 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    
    if ( io->appl_ptr < rsound->last_ptr )
    {
-      rsound_stop(io);
-      rsound_start(io);
+      rsd_stop(rsound->rd);
+      rsd_start(rsound->rd);
    }
 
-   ptr = rsnd_get_ptr(rsound);	
+   ptr = rsd_pointer(rsound->rd);	
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
 
    // Warning, dirty as fuck hack!
@@ -106,21 +91,16 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
 
 static int rsound_close(snd_pcm_ioplug_t *io)
 {
-	snd_pcm_rsound_t *rsound = io->private_data;
-
-   if ( rsound )
-      free(rsound);
-	
+   snd_pcm_rsound_t *rsound = io->private_data;
+   rsd_free(rsound->rd);
+   free(rsound);
    return 0;
 }
 
 static int rsound_prepare(snd_pcm_ioplug_t *io)
 {
-	snd_pcm_rsound_t *rsound = io->private_data;
-   if ( rsnd_create_connection(rsound)) 
-      return 0;
-   else
-      return -1;
+   snd_pcm_rsound_t *rsound = io->private_data;
+   return ( rsd_start(rsound->rd));
 }
 
 static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
@@ -132,10 +112,10 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 
 	int err;
 	
-   if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_FORMAT, ARRAY_SIZE(formats), formats)) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_FORMAT, 1, formats)) < 0 )
 		goto const_err;
 
-	if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_ACCESS, ARRAY_SIZE(access_list), access_list)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_ACCESS, 1, access_list)) < 0)
 		goto const_err;
 
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_CHANNELS, 1, 8)) < 0)
@@ -163,7 +143,6 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 {
 	snd_pcm_rsound_t *rsound = io->private_data;
 
-	rsound->bytes_per_frame = (snd_pcm_format_physical_width(io->format) * io->channels) / 8;
 	if ( io->format != SND_PCM_FORMAT_S16_LE )
 	{
 		return -EINVAL;
@@ -173,32 +152,30 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 		return -EINVAL;
 	}
 
-	rsound->rate = io->rate;
-	rsound->channels = io->channels;
+	int rate = io->rate;
+	int channels = io->channels;
+   snd_pcm_uframes_t buffersize;
+   rsd_set_param(rsound->rd, RSD_SAMPLERATE, &rate);
+   rsd_set_param(rsound->rd, RSD_CHANNELS, &channels);
 	
    int err;
    
-   if ((err = snd_pcm_hw_params_get_buffer_size(params, &rsound->alsa_buffer_size) < 0))
+   if ((err = snd_pcm_hw_params_get_buffer_size(params, &buffersize) < 0))
 	{
       return err;
 	}
-   if ((err = snd_pcm_hw_params_get_period_size(params, &rsound->alsa_fragsize, NULL) < 0))
-	{
-      return err;
-	}
-
-	rsound->alsa_buffer_size *= rsound->bytes_per_frame;
-   rsound->buffer_size = rsound->alsa_buffer_size;
-	rsound->alsa_fragsize *= rsound->bytes_per_frame;
+   buffersize *= io->channels * 2;
+   int bufsiz = (int)buffersize;
+   rsd_set_param(rsound->rd, RSD_BUFSIZE, &bufsiz);
 
    return 0;
 }
 
 static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
 {
-   snd_pcm_rsound_t *rd = io->private_data;
+   snd_pcm_rsound_t *rsound = io->private_data;
 
-   int ptr = rsnd_get_delay(rd);
+   int ptr = rsd_delay(rsound->rd);
    if ( ptr < 0 )
       ptr = 0;
    
@@ -209,17 +186,19 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
 
 static int rsound_drain(snd_pcm_ioplug_t *io)
 {
-   rsound_stop(io);
-   rsound_start(io);
+   snd_pcm_rsound_t *rsound = io->private_data;
+   rsd_stop(rsound->rd);
+   rsd_start(rsound->rd);
    return 0;
 }
 
 static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
 {
-   if ( !enable )
-      rsound_start(io);
+   snd_pcm_rsound_t *rsound = io->private_data;
+   if ( enable )
+      rsd_stop(rsound->rd);
    else
-      rsound_stop(io);
+      rsd_stop(rsound->rd);
    return 0;
 }
 
@@ -281,49 +260,37 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 		SNDERR("Cannot allocate");
 		return -ENOMEM;
 	}
-
-
-	rsound->host = strdup(host);
-	if ( !rsound->host )
-	{
-		SNDERR("Cannot allocate");
-		free(rsound);
-		return -ENOMEM;
-	}
-	
-	rsound->port = strdup(port);
-	if ( !rsound->port )
-	{
-		SNDERR("Cannot allocate");
-		free(rsound);
-		return -ENOMEM;
-	}
-
-   rsound->conn.socket = -1;
-   rsound->conn.ctl_socket = -1;
-   err = rsnd_connect_server(rsound);
-   if ( err != 1 )
+   if ( rsd_init(&rsound->rd) < 0 )
    {
-      err = -EINVAL;
-      goto error;
+      SNDERR("Cannot allocate");
+      free(rsound);
+      return -ENOMEM;
    }
 
+
+	rsd_set_param(rsound->rd, RSD_HOST, (void*)host);
+	if ( !rsound->rd->host )
+	{
+		SNDERR("Cannot allocate");
+		free(rsound);
+		return -ENOMEM;
+	}
+   
+   rsd_set_param(rsound->rd, RSD_PORT, (void*)port);
+	if ( !rsound->rd->port )
+	{
+		SNDERR("Cannot allocate");
+		free(rsound);
+		return -ENOMEM;
+	}
+
+   rsound->last_ptr = 0;
+	
 	rsound->io.version = SND_PCM_IOPLUG_VERSION;
 	rsound->io.name = "ALSA <-> RSound output plugin";
 	rsound->io.mmap_rw = 0;
-   rsound->io.poll_fd = rsound->conn.socket;
-   rsound->io.poll_events = POLLOUT;
 	rsound->io.callback = &rsound_playback_callback;
 	rsound->io.private_data = rsound;
-
-	rsound->has_written = 0;
-	rsound->buffer_pointer = 0;
-   rsound->ready_for_data = 0;
-   rsound->thread_active = 0;
-   rsound->buffer = NULL;
-   pthread_mutex_init(&rsound->thread.mutex, NULL);
-   pthread_mutex_init(&rsound->thread.cond_mutex, NULL);
-   pthread_cond_init(&rsound->thread.cond, NULL);
 
 	err = snd_pcm_ioplug_create(&rsound->io, name, stream, mode);
 	if ( err < 0 )
@@ -340,8 +307,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
    return 0;
 
 error:
-	free(rsound->host);
-	free(rsound->port);
+   rsd_free(rsound->rd);
 	free(rsound);
 	return err;
 }
