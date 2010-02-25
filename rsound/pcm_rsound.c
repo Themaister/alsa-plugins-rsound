@@ -198,7 +198,7 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
    if ( enable )
       rsd_stop(rsound->rd);
    else
-      rsd_stop(rsound->rd);
+      rsd_start(rsound->rd);
    return 0;
 }
 
