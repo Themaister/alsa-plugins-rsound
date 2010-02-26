@@ -33,6 +33,7 @@ int rsound_stop(snd_pcm_ioplug_t *io)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    rsd_stop(rsound->rd);
+   rsound->last_ptr = 0;
    return 0;
 }
 
