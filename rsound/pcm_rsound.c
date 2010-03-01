@@ -115,22 +115,16 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	
    if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_FORMAT, 1, formats)) < 0 )
 		goto const_err;
-
 	if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_ACCESS, 1, access_list)) < 0)
 		goto const_err;
-
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_CHANNELS, 1, 8)) < 0)
       goto const_err;
-
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
-   
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 26)) < 0)
 		goto const_err;
-	
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 8, 1 << 13)) < 0 )
 		goto const_err;
-	
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
 		goto const_err;
 
@@ -211,17 +205,7 @@ static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
    (void) pfd;
    (void) nfds;
 
-   struct pollfd fd;
    snd_pcm_rsound_t *rsound = io->private_data;
-
-   fd.fd = rsound->rd->conn.socket;
-
-   int err;
-   if ( (err = poll(&fd, 1, 0)) < 0 )
-   {
-      *revents = POLLHUP;
-      return -EBADF;
-   }
 
    if ( rsound->rd->conn.socket <= 0 )
    {
@@ -229,7 +213,7 @@ static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
       return -EBADF;
    }
 
-   if ( (rsd_get_avail(rsound->rd) >= (int)io->period_size * (int)io->channels * 2) && (pfd->revents & POLLOUT) )
+   if ( rsd_get_avail(rsound->rd) >= (int)io->period_size * (int)io->channels * 2 )
       *revents = POLLOUT;
    else
       *revents = 0;
@@ -247,7 +231,7 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.prepare = rsound_prepare,
    .drain = rsound_drain,
    .pause = rsound_pause,
-   .poll_revents = rsound_poll_revents
+   .poll_revents = rsound_poll_revents 
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
