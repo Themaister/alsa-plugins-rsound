@@ -208,14 +208,20 @@ static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
                                  unsigned int nfds,
                                  unsigned short *revents)
 {
+   (void) pfd;
+   (void) nfds;
+
+   struct pollfd fd;
+   snd_pcm_rsound_t *rsound = io->private_data;
+
+   fd.fd = rsound->rd->conn.socket;
+
    int err;
-   if ( (err = poll(pfd, nfds, 0)) < 0 )
+   if ( (err = poll(&fd, 1, 0)) < 0 )
    {
       *revents = POLLHUP;
       return -EBADF;
    }
-
-   snd_pcm_rsound_t *rsound = io->private_data;
 
    if ( rsound->rd->conn.socket <= 0 )
    {
@@ -223,7 +229,7 @@ static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
       return -EBADF;
    }
 
-   if ( (rsd_get_avail(rsound->rd) >= io->period_size * io->channels * 2) && (pfd->revents & POLLOUT) )
+   if ( (rsd_get_avail(rsound->rd) >= (int)io->period_size * (int)io->channels * 2) && (pfd->revents & POLLOUT) )
       *revents = POLLOUT;
    else
       *revents = 0;
@@ -280,7 +286,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 			}
 			continue;
 		}
-      /*if (strcmp(id, "latency") == 0)
+      if (strcmp(id, "latency") == 0)
       {
          if ( snd_config_get_string(n, &latency) < 0 )
          {
@@ -288,7 +294,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
             return -EINVAL;
          }
          continue;
-      }*/
+      }
 		SNDERR("Unknown field %s", id);
 		return -EINVAL;
 	}
