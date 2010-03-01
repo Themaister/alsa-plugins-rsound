@@ -208,7 +208,6 @@ static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
                                  unsigned int nfds,
                                  unsigned short *revents)
 {
-
    int err;
    if ( (err = poll(pfd, nfds, 0)) < 0 )
    {
@@ -281,7 +280,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 			}
 			continue;
 		}
-      if (strcmp(id, "latency") == 0)
+      /*if (strcmp(id, "latency") == 0)
       {
          if ( snd_config_get_string(n, &latency) < 0 )
          {
@@ -289,7 +288,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
             return -EINVAL;
          }
          continue;
-      }
+      }*/
 		SNDERR("Unknown field %s", id);
 		return -EINVAL;
 	}
