@@ -240,7 +240,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	snd_config_iterator_t i, next;
 	const char *host = "localhost";
 	const char *port = "12345";
-   const char *latency = NULL;
+   //const char *latency = NULL;
 	int err;
 	snd_pcm_rsound_t *rsound;
 
@@ -270,7 +270,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 			}
 			continue;
 		}
-      if (strcmp(id, "latency") == 0)
+      /*if (strcmp(id, "latency") == 0)
       {
          if ( snd_config_get_string(n, &latency) < 0 )
          {
@@ -278,7 +278,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
             return -EINVAL;
          }
          continue;
-      }
+      }*/
 		SNDERR("Unknown field %s", id);
 		return -EINVAL;
 	}
@@ -313,12 +313,12 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 		return -ENOMEM;
 	}
 
-   if ( latency != NULL )
+   /*if ( latency != NULL )
    {
       int delay = atoi(latency);
       if ( delay > 0 )
          rsd_set_param(rsound->rd, RSD_LATENCY, &delay);
-   }
+   }*/
 
    rsound->last_ptr = 0;
 	

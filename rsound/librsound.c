@@ -404,17 +404,16 @@ static void* rsnd_thread ( void * thread_data )
    /* Convert from msecs to bytes */
    int max_delay = (rd->min_latency * rd->rate * rd->channels * 2) / 1000;
    if ( max_delay > 0 )
-      max_delay = ((int)rd->buffer_size + (int)rd->chunk_size > rd->min_latency) ? (int)rd->buffer_size + (int)rd->chunk_size : rd->min_latency;
+      max_delay = ((int)rd->buffer_size > max_delay) ? (int)rd->buffer_size : max_delay;
    else
       max_delay = 0;
-
 
    /* Plays back data as long as there is data in the buffer */
    for (;;)
    {
       delay = rsd_delay(rd);
       /* Trying to compensate for latency. Makes sure that the delay never goes over a certain amount */
-      while ( (rd->buffer_pointer >= (int)rd->chunk_size) && ( !max_delay || (delay + ((int)rd->buffer_size - rd->buffer_pointer) <= max_delay) ) )
+      while ( (rd->buffer_pointer >= (int)rd->chunk_size) && ( !max_delay || (delay <= max_delay) ) )
       {
          rc = rsnd_send_chunk(rd->conn.socket, rd->buffer, rd->chunk_size);
          if ( rc <= 0 )
