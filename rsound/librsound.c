@@ -26,10 +26,11 @@
 #include <unistd.h>
 #include <poll.h>
 #include <errno.h>
+#include <time.h>
 
-static inline int rsnd_is_little_endian(void);
-static inline void rsnd_swap_endian_16 ( uint16_t * x );
-static inline void rsnd_swap_endian_32 ( uint32_t * x );
+static int rsnd_is_little_endian(void);
+static void rsnd_swap_endian_16 ( uint16_t * x );
+static void rsnd_swap_endian_32 ( uint32_t * x );
 static int rsnd_connect_server( rsound_t *rd );
 static int rsnd_send_header_info(rsound_t *rd);
 static int rsnd_get_backend_info ( rsound_t *rd );
@@ -42,18 +43,18 @@ static int rsnd_get_ptr(rsound_t *rd);
 static int rsnd_reset(rsound_t *rd);
 static void* rsnd_thread ( void * thread_data );
 
-static inline int rsnd_is_little_endian(void)
+static int rsnd_is_little_endian(void)
 {
 	uint16_t i = 1;
 	return *((uint8_t*)&i);
 }
 
-static inline void rsnd_swap_endian_16 ( uint16_t * x )
+static void rsnd_swap_endian_16 ( uint16_t * x )
 {
 	*x = (*x>>8) | (*x<<8);
 }
 
-static inline void rsnd_swap_endian_32 ( uint32_t * x )
+static void rsnd_swap_endian_32 ( uint32_t * x )
 {
 	*x = 	(*x >> 24 ) |
 			((*x<<8) & 0x00FF0000) |
@@ -73,20 +74,24 @@ static int rsnd_connect_server( rsound_t *rd )
 	rd->conn.socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
    rd->conn.ctl_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
-	if ( connect(rd->conn.socket, res->ai_addr, res->ai_addrlen) != 0 )
-		return 0;
+   if ( connect(rd->conn.socket, res->ai_addr, res->ai_addrlen) < 0)
+      goto error;
 
-	if ( connect(rd->conn.ctl_socket, res->ai_addr, res->ai_addrlen) != 0 )
-		return 0;
+	if ( connect(rd->conn.ctl_socket, res->ai_addr, res->ai_addrlen) < 0 )
+      goto error;
 
+   
    if ( fcntl(rd->conn.socket, F_SETFL, O_NONBLOCK) < 0)
    {
       fprintf(stderr, "Couldn't set socket to non-blocking ...\n");
-      return 0;
+      goto error;
    }
 
 	freeaddrinfo(res);
-	return 1;
+   return 0;
+error:
+   freeaddrinfo(res);
+	return -1;
 }
 
 static int rsnd_send_header_info(rsound_t *rd)
@@ -94,6 +99,7 @@ static int rsnd_send_header_info(rsound_t *rd)
 #define HEADER_SIZE 44
 	char buffer[HEADER_SIZE] = {0};
 	int rc = 0;
+   struct pollfd fd;
 
 #define RATE 24
 #define CHANNEL 22
@@ -114,11 +120,10 @@ static int rsnd_send_header_info(rsound_t *rd)
 	*((uint16_t*)(buffer+CHANNEL)) = channels_temp;
 	*((uint16_t*)(buffer+FRAMESIZE)) = framesize_temp;
 
-   struct pollfd fd;
    fd.fd = rd->conn.socket;
    fd.events = POLLOUT;
 
-   if ( poll(&fd, 1, 500) < 0 )
+   if ( poll(&fd, 1, 10000) < 0 )
    {
 		close(rd->conn.socket);
 		close(rd->conn.ctl_socket);
@@ -145,14 +150,16 @@ static int rsnd_send_header_info(rsound_t *rd)
 
 static int rsnd_get_backend_info ( rsound_t *rd )
 {
-	uint32_t chunk_size_temp;
+   #define RSND_HEADER_SIZE 8
+
+   char rsnd_header[RSND_HEADER_SIZE] = {0};
 	int rc;
 
    struct pollfd fd;
    fd.fd = rd->conn.socket;
    fd.events = POLLIN;
 
-   if ( poll(&fd, 1, 500) < 0 )
+   if ( poll(&fd, 1, 10000) < 0 )
    {
       close(rd->conn.socket);
       close(rd->conn.ctl_socket);
@@ -166,20 +173,19 @@ static int rsnd_get_backend_info ( rsound_t *rd )
       return -1;
    }
 
-	rc = recv(rd->conn.socket, &chunk_size_temp, sizeof(uint32_t), 0);
-	if ( rc != sizeof(uint32_t))
+	rc = recv(rd->conn.socket, rsnd_header, RSND_HEADER_SIZE, 0);
+	if ( rc != RSND_HEADER_SIZE)
 	{
 		close(rd->conn.socket);
       close(rd->conn.ctl_socket);
 		return -1;
 	}
 
-	chunk_size_temp = ntohl(chunk_size_temp);
+	rd->backend_info.latency = ntohl(*((uint32_t*)(rsnd_header)));
+	rd->backend_info.chunk_size = ntohl(*((uint32_t*)(rsnd_header+4)));
 
-   rd->chunk_size = chunk_size_temp;
-   
-   if ( rd->buffer_size <= 0 || rd->buffer_size < rd->chunk_size)
-      rd->buffer_size = rd->chunk_size * 32;
+   if ( rd->buffer_size <= 0 || rd->buffer_size < rd->backend_info.chunk_size)
+      rd->buffer_size = rd->backend_info.chunk_size * 32;
 
 	rd->buffer = realloc ( rd->buffer, rd->buffer_size );
 	rd->buffer_pointer = 0;
@@ -376,19 +382,25 @@ static int rsnd_stop_thread(rsound_t *rd)
 
 static int rsnd_get_delay(rsound_t *rd)
 {
+   int ptr;
    pthread_mutex_lock(&rd->thread.mutex);
    rsnd_drain(rd);
-   int ptr = rd->bytes_in_buffer;
+   ptr = rd->bytes_in_buffer;
    pthread_mutex_unlock(&rd->thread.mutex);
+   ptr += (int)rd->backend_info.latency;
    if ( ptr < 0 )
       ptr = 0;
+
+// Adds the backend latency
+
    return ptr;
 }
 
 static int rsnd_get_ptr(rsound_t *rd)
 {
+   int ptr;
    pthread_mutex_lock(&rd->thread.mutex);
-   int ptr = rd->buffer_pointer;
+   ptr = rd->buffer_pointer;
    pthread_mutex_unlock(&rd->thread.mutex);
 
    return ptr;
@@ -400,7 +412,6 @@ static void* rsnd_thread ( void * thread_data )
    int rc;
    struct timespec now;
    int nsecs;
-   int delay;
    /* Convert from msecs to bytes */
    int max_delay = (rd->min_latency * rd->rate * rd->channels * 2) / 1000;
    if ( max_delay > 0 )
@@ -411,11 +422,10 @@ static void* rsnd_thread ( void * thread_data )
    /* Plays back data as long as there is data in the buffer */
    for (;;)
    {
-      delay = rsd_delay(rd);
       /* Trying to compensate for latency. Makes sure that the delay never goes over a certain amount */
-      while ( (rd->buffer_pointer >= (int)rd->chunk_size) && ( !max_delay || (delay <= max_delay) ) )
+      while ( (rd->buffer_pointer >= (int)rd->backend_info.chunk_size) && ( !max_delay || (rsd_delay(rd) <= max_delay) ) )
       {
-         rc = rsnd_send_chunk(rd->conn.socket, rd->buffer, rd->chunk_size);
+         rc = rsnd_send_chunk(rd->conn.socket, rd->buffer, rd->backend_info.chunk_size);
          if ( rc <= 0 )
          {
             rsnd_reset(rd);
@@ -440,8 +450,8 @@ static void* rsnd_thread ( void * thread_data )
          pthread_mutex_unlock(&rd->thread.mutex);
 
          pthread_mutex_lock(&rd->thread.mutex);
-         memmove(rd->buffer, rd->buffer + rd->chunk_size, rd->buffer_size - rd->chunk_size);
-         rd->buffer_pointer -= (int)rd->chunk_size;
+         memmove(rd->buffer, rd->buffer + rd->backend_info.chunk_size, rd->buffer_size - rd->backend_info.chunk_size);
+         rd->buffer_pointer -= (int)rd->backend_info.chunk_size;
          pthread_mutex_unlock(&rd->thread.mutex);
 
          /* Buffer has decreased, signal fill_buffer */
@@ -482,9 +492,9 @@ static int rsnd_reset(rsound_t *rd)
 
 int rsd_stop(rsound_t *rd)
 {
+   const char buf[] = "CLOSE";
    rsnd_stop_thread(rd);
    
-   const char buf[] = "CLOSE";
    send(rd->conn.ctl_socket, buf, strlen(buf) + 1, 0);
    close(rd->conn.ctl_socket);
    close(rd->conn.socket);
@@ -525,12 +535,12 @@ int rsd_set_param(rsound_t *rd, int option, void* param)
          rd->channels = *((int*)param);
          break;
       case RSD_HOST:
-         if ( rd->host )
+         if ( rd->host != NULL )
             free(rd->host);
          rd->host = strdup((char*)param);
          break;
       case RSD_PORT:
-         if ( rd->port )
+         if ( rd->port != NULL )
             free(rd->port);
          rd->port = strdup((char*)param);
          break;
