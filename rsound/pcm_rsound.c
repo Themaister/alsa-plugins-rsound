@@ -189,29 +189,6 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
    return 0;
 }
 
-static int rsound_poll_revents(  snd_pcm_ioplug_t *io,
-                                 struct pollfd *pfd,
-                                 unsigned int nfds,
-                                 unsigned short *revents)
-{
-   (void) pfd;
-   (void) nfds;
-
-   snd_pcm_rsound_t *rsound = io->private_data;
-
-   if ( rsound->rd->conn.socket <= 0 )
-   {
-      *revents = POLLHUP;
-      return -EBADF;
-   }
-
-   if ( rsd_get_avail(rsound->rd) >= (int)io->period_size * (int)io->channels * 2 )
-      *revents = POLLOUT;
-   else
-      *revents = 0;
-   return 0;
-}
-
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.start = rsound_start,
 	.stop = rsound_stop,
@@ -221,8 +198,7 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
    .delay = rsound_delay,
 	.hw_params = rsound_hw_params,
 	.prepare = rsound_prepare,
-   .pause = rsound_pause,
-   .poll_revents = rsound_poll_revents 
+   .pause = rsound_pause
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
@@ -231,7 +207,6 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 	snd_config_iterator_t i, next;
 	const char *host = "localhost";
 	const char *port = "12345";
-   //const char *latency = NULL;
 	int err;
 	snd_pcm_rsound_t *rsound;
 
@@ -261,16 +236,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 			}
 			continue;
 		}
-      /*if (strcmp(id, "latency") == 0)
-      {
-         if ( snd_config_get_string(n, &latency) < 0 )
-         {
-            SNDERR("Invalid type for %s", id);
-            return -EINVAL;
-         }
-         continue;
-      }*/
-		SNDERR("Unknown field %s", id);
+      SNDERR("Unknown field %s", id);
 		return -EINVAL;
 	}
 
@@ -303,13 +269,6 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 		free(rsound);
 		return -ENOMEM;
 	}
-
-   /*if ( latency != NULL )
-   {
-      int delay = atoi(latency);
-      if ( delay > 0 )
-         rsd_set_param(rsound->rd, RSD_LATENCY, &delay);
-   }*/
 
    rsound->last_ptr = 0;
 	
