@@ -61,7 +61,12 @@ static int rsound_start(snd_pcm_ioplug_t *io)
    snd_pcm_rsound_t *rsound = io->private_data;
    rc = rsd_start(rsound->rd);
    if ( rc < 0 )
+   {
+      io->poll_fd = -1;
+      io->poll_events = POLLOUT;
+      snd_pcm_ioplug_reinit_status(io);
       return rc;
+   }
 
    io->poll_fd = rsound->rd->conn.socket;
    io->poll_events = POLLOUT;
@@ -76,14 +81,15 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    
    if ( io->appl_ptr < rsound->last_ptr )
    {
-      rsd_stop(rsound->rd);
-      rsd_start(rsound->rd);
+      fprintf(stderr, "*** WARNING *** Dirty hack triggered.\n");
+      if ( rsd_stop(rsound->rd) < 0 ) return rsound->last_ptr;
+      if ( rsd_start(rsound->rd) < 0 ) return rsound->last_ptr;
    }
 
    ptr = rsd_pointer(rsound->rd);	
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
 
-   // Warning, dirty as fuck hack!
+   // Warning, dirty as fuck hack! Stupid ALSA.
    ptr = io->appl_ptr - ptr;
    rsound->last_ptr = io->appl_ptr;
 
