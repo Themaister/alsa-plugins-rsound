@@ -33,7 +33,6 @@ int rsound_stop(snd_pcm_ioplug_t *io)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    rsd_stop(rsound->rd);
-   rsound->last_ptr = 0;
    return 0;
 }
 
@@ -50,7 +49,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    if ( result <= 0 )
    {
       rsd_stop(rsound->rd);
-      return -1;
+      return -EIO;
    }
    return result / (io->channels * 2);
 }
@@ -62,9 +61,6 @@ static int rsound_start(snd_pcm_ioplug_t *io)
    rc = rsd_start(rsound->rd);
    if ( rc < 0 )
    {
-      io->poll_fd = -1;
-      io->poll_events = POLLOUT;
-      snd_pcm_ioplug_reinit_status(io);
       return rc;
    }
 
@@ -81,7 +77,7 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    
    if ( io->appl_ptr < rsound->last_ptr )
    {
-      fprintf(stderr, "*** WARNING *** Dirty hack triggered.\n");
+      //fprintf(stderr, "*** WARNING *** Dirty hack triggered.\n");
       if ( rsd_stop(rsound->rd) < 0 ) return rsound->last_ptr;
       if ( rsd_start(rsound->rd) < 0 ) return rsound->last_ptr;
    }
@@ -129,9 +125,9 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 		goto const_err;
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 26)) < 0)
 		goto const_err;
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 8, 1 << 13)) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 6, 1 << 20)) < 0 )
 		goto const_err;
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 1024)) < 0)
 		goto const_err;
 
 	return 0;
@@ -194,6 +190,24 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
       return rsd_start(rsound->rd);
 }
 
+static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
+            unsigned int nfds, unsigned short *revents)
+{
+   snd_pcm_rsound_t *rsound = io->private_data;
+
+   if ( rsound->rd->conn.socket <= 0 )
+      return -EIO;
+
+   poll(pfd, nfds, 0);
+
+   if ( rsound->rd->ready_for_data && (pfd->revents & POLLOUT) )
+      *revents = POLLOUT;
+   else
+      *revents = 0;
+
+   return 0;
+}
+
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.start = rsound_start,
 	.stop = rsound_stop,
@@ -203,7 +217,8 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
    .delay = rsound_delay,
 	.hw_params = rsound_hw_params,
 	.prepare = rsound_prepare,
-   .pause = rsound_pause
+   .pause = rsound_pause,
+   .poll_revents = rsound_poll_revents
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
