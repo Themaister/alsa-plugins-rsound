@@ -183,10 +183,9 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    if ( enable )
-      rsd_stop(rsound->rd);
+      return rsd_stop(rsound->rd);
    else
-      rsd_start(rsound->rd);
-   return 0;
+      return rsd_start(rsound->rd);
 }
 
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
