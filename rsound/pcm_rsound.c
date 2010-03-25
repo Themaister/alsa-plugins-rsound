@@ -127,7 +127,7 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 		goto const_err;
    if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 6, 1 << 20)) < 0 )
 		goto const_err;
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 2, 1024)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
 		goto const_err;
 
 	return 0;
@@ -196,7 +196,9 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
    snd_pcm_rsound_t *rsound = io->private_data;
 
    if ( rsound->rd->conn.socket <= 0 )
+   {
       return -EIO;
+   }
 
    poll(pfd, nfds, 0);
 
