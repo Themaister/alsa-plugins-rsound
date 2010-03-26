@@ -78,8 +78,8 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    if ( io->appl_ptr < rsound->last_ptr )
    {
       //fprintf(stderr, "*** WARNING *** Dirty hack triggered.\n");
-      if ( rsd_stop(rsound->rd) < 0 ) return rsound->last_ptr;
-      if ( rsd_start(rsound->rd) < 0 ) return rsound->last_ptr;
+      rsound_stop(io);
+      rsound_start(io);
    }
 
    ptr = rsd_pointer(rsound->rd);	
@@ -102,14 +102,7 @@ static int rsound_close(snd_pcm_ioplug_t *io)
 
 static int rsound_prepare(snd_pcm_ioplug_t *io)
 {
-   snd_pcm_rsound_t *rsound = io->private_data;
-   if ( rsd_start(rsound->rd) < 0 )
-      return -1;
-   
-   io->poll_fd = rsound->rd->conn.socket;
-   io->poll_events = POLLOUT;
-   snd_pcm_ioplug_reinit_status(io);
-   return 0;
+   return rsound_start(io);
 }
 
 static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
@@ -129,9 +122,9 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
       goto const_err;
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 96000)) < 0 )
 		goto const_err;
-	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 26)) < 0)
+	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 24)) < 0)
 		goto const_err;
-   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 6, 1 << 20)) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 6, 1 << 18)) < 0 )
 		goto const_err;
 	if ((err = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 1024)) < 0)
 		goto const_err;
@@ -189,11 +182,10 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
 
 static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
 {
-   snd_pcm_rsound_t *rsound = io->private_data;
    if ( enable )
-      return rsd_stop(rsound->rd);
+      return rsound_stop(io);
    else
-      return rsd_start(rsound->rd);
+      return rsound_start(io);
 }
 
 static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
@@ -226,7 +218,7 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.hw_params = rsound_hw_params,
 	.prepare = rsound_prepare,
    .pause = rsound_pause,
-   .poll_revents = rsound_poll_revents
+//   .poll_revents = rsound_poll_revents
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
