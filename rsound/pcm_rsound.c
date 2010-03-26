@@ -103,7 +103,13 @@ static int rsound_close(snd_pcm_ioplug_t *io)
 static int rsound_prepare(snd_pcm_ioplug_t *io)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
-   return ( rsd_start(rsound->rd));
+   if ( rsd_start(rsound->rd) < 0 )
+      return -1;
+   
+   io->poll_fd = rsound->rd->conn.socket;
+   io->poll_events = POLLOUT;
+   snd_pcm_ioplug_reinit_status(io);
+   return 0;
 }
 
 static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
