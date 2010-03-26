@@ -65,6 +65,24 @@ static int rsound_start(snd_pcm_ioplug_t *io)
    {
       return -EIO;
    }
+   
+   struct pollfd fd = {
+      .fd = rsound->rd->conn.socket,
+      .events = POLLOUT
+   };
+
+/* Makes sure that we really have a valid descriptor */
+   if ( poll(&fd, 1, 1000) < 0 )
+   {
+      perror("poll");
+      return -EIO;
+   }
+
+   if ( !(fd.revents & POLLOUT) )
+   {
+      fprintf(stderr, ":<\n");
+      return -EIO;
+   }
 
    io->poll_fd = rsound->rd->conn.socket;
    io->poll_events = POLLOUT;
@@ -194,7 +212,11 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
             unsigned int nfds, unsigned short *revents)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
-   assert(pfd[0].fd == rsound->rd->conn.socket);
+
+   if ( pfd[0].fd != rsound->rd->conn.socket )
+   {
+      fprintf(stderr, "*** WARNING: Given fd: %d, rsd fd: %d ***\n", pfd[0].fd, rsound->rd->conn.socket);
+   }
 
    if ( rsound->rd->conn.socket <= 0 )
       return -EIO;
