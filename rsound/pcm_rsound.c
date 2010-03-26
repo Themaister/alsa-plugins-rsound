@@ -33,6 +33,7 @@ int rsound_stop(snd_pcm_ioplug_t *io)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    rsd_stop(rsound->rd);
+   rsound->last_ptr = 0;
    return 0;
 }
 
@@ -59,9 +60,10 @@ static int rsound_start(snd_pcm_ioplug_t *io)
    int rc;
    snd_pcm_rsound_t *rsound = io->private_data;
    rc = rsd_start(rsound->rd);
+   rsound->last_ptr = 0;
    if ( rc < 0 )
    {
-      return rc;
+      return -EIO;
    }
 
    io->poll_fd = rsound->rd->conn.socket;
@@ -188,6 +190,7 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
       return rsound_start(io);
 }
 
+#if 0
 static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
             unsigned int nfds, unsigned short *revents)
 {
@@ -207,6 +210,7 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
 
    return 0;
 }
+#endif
 
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.start = rsound_start,
