@@ -190,18 +190,21 @@ static int rsound_pause(snd_pcm_ioplug_t *io, int enable)
       return rsound_start(io);
 }
 
-#if 0
 static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
             unsigned int nfds, unsigned short *revents)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
+   assert(pfd[0].fd == rsound->rd->conn.socket);
 
    if ( rsound->rd->conn.socket <= 0 )
+      return -EIO;
+
+   if ( poll(pfd, nfds, 0) < 0 )
    {
+      perror("poll");
+      *revents = 0;
       return -EIO;
    }
-
-   poll(pfd, nfds, 0);
 
    if ( rsound->rd->ready_for_data && (pfd->revents & POLLOUT) )
       *revents = POLLOUT;
@@ -210,7 +213,6 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
 
    return 0;
 }
-#endif
 
 static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.start = rsound_start,
@@ -222,7 +224,7 @@ static const snd_pcm_ioplug_callback_t rsound_playback_callback = {
 	.hw_params = rsound_hw_params,
 	.prepare = rsound_prepare,
    .pause = rsound_pause,
-//   .poll_revents = rsound_poll_revents
+   .poll_revents = rsound_poll_revents
 };
 
 SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
