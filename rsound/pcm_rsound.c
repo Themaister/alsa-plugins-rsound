@@ -29,11 +29,15 @@ typedef struct snd_pcm_rsound
    snd_pcm_ioplug_t io;
 } snd_pcm_rsound_t;
 
+
+
 int rsound_stop(snd_pcm_ioplug_t *io)
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    rsd_stop(rsound->rd);
    rsound->last_ptr = 0;
+//   fprintf(stderr, "[STOP]\n");
+//   fprintf(stderr, "SOCKET: %d, CTL: %d\n", rsound->rd->conn.socket, rsound->rd->conn.ctl_socket);
    return 0;
 }
 
@@ -49,7 +53,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
    ssize_t result = rsd_write(rsound->rd, buf, size);
    if ( result <= 0 )
    {
-      rsd_stop(rsound->rd);
+      rsound_stop(io);
       return -EIO;
    }
    return result / (io->channels * 2);
@@ -57,36 +61,21 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 
 static int rsound_start(snd_pcm_ioplug_t *io)
 {
+//   fprintf(stderr, "[START]\n");
    int rc;
    snd_pcm_rsound_t *rsound = io->private_data;
    rc = rsd_start(rsound->rd);
    rsound->last_ptr = 0;
    if ( rc < 0 )
    {
+//      fprintf(stderr, "rsound_start() failed.\n");
       return -EIO;
    }
    
-   struct pollfd fd = {
-      .fd = rsound->rd->conn.socket,
-      .events = POLLOUT
-   };
-
-/* Makes sure that we really have a valid descriptor */
-   if ( poll(&fd, 1, 1000) < 0 )
-   {
-      perror("poll");
-      return -EIO;
-   }
-
-   if ( !(fd.revents & POLLOUT) )
-   {
-      fprintf(stderr, ":<\n");
-      return -EIO;
-   }
-
    io->poll_fd = rsound->rd->conn.socket;
    io->poll_events = POLLOUT;
    snd_pcm_ioplug_reinit_status(io);
+//   fprintf(stderr, "SOCKET: %d, CTL: %d\n", rsound->rd->conn.socket, rsound->rd->conn.ctl_socket);
    return 0;
 }
 
@@ -213,25 +202,43 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
 {
    snd_pcm_rsound_t *rsound = io->private_data;
 
-   if ( pfd[0].fd != rsound->rd->conn.socket )
+/*   if ( pfd[0].fd != rsound->rd->conn.socket )
    {
       fprintf(stderr, "*** WARNING: Given fd: %d, rsd fd: %d ***\n", pfd[0].fd, rsound->rd->conn.socket);
-   }
+      if ( rsound_start(io) < 0 )
+         fprintf(stderr, ">______<\n");
+   } */
 
-   if ( rsound->rd->conn.socket <= 0 )
-      return -EIO;
+   (void)pfd;
+   (void)nfds;
 
-   if ( poll(pfd, nfds, 0) < 0 )
+   
+/*   if ( rsound->rd->conn.socket <= 0 )
+      fprintf(stderr, "Guise ... wth?\n");
+*/
+   assert ( rsound->rd->conn.socket > 0 );
+/*   if ( rsound->rd->conn.socket <= 0 )
+      return -EIO; */
+
+
+   struct pollfd fd = {
+      .fd = rsound->rd->conn.socket,
+      .events = POLLOUT
+   };
+
+   if ( poll(&fd, 1, 0) < 0 )
    {
       perror("poll");
       *revents = 0;
       return -EIO;
    }
 
-   if ( rsound->rd->ready_for_data && (pfd->revents & POLLOUT) )
+   if ( rsound->rd->ready_for_data && (fd.revents & POLLOUT) )
       *revents = POLLOUT;
    else
+   {
       *revents = 0;
+   }
 
    return 0;
 }
