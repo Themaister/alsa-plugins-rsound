@@ -36,8 +36,6 @@ int rsound_stop(snd_pcm_ioplug_t *io)
    snd_pcm_rsound_t *rsound = io->private_data;
    rsd_stop(rsound->rd);
    rsound->last_ptr = 0;
-//   fprintf(stderr, "[STOP]\n");
-//   fprintf(stderr, "SOCKET: %d, CTL: %d\n", rsound->rd->conn.socket, rsound->rd->conn.ctl_socket);
    return 0;
 }
 
@@ -61,21 +59,18 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 
 static int rsound_start(snd_pcm_ioplug_t *io)
 {
-//   fprintf(stderr, "[START]\n");
    int rc;
    snd_pcm_rsound_t *rsound = io->private_data;
    rc = rsd_start(rsound->rd);
    rsound->last_ptr = 0;
    if ( rc < 0 )
    {
-//      fprintf(stderr, "rsound_start() failed.\n");
       return -EIO;
    }
    
    io->poll_fd = rsound->rd->conn.socket;
    io->poll_events = POLLOUT;
    snd_pcm_ioplug_reinit_status(io);
-//   fprintf(stderr, "SOCKET: %d, CTL: %d\n", rsound->rd->conn.socket, rsound->rd->conn.ctl_socket);
    return 0;
 }
 
@@ -86,7 +81,6 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    
    if ( io->appl_ptr < rsound->last_ptr )
    {
-      //fprintf(stderr, "*** WARNING *** Dirty hack triggered.\n");
       rsound_stop(io);
       rsound_start(io);
    }
@@ -94,7 +88,6 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    ptr = rsd_pointer(rsound->rd);	
    ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
 
-   // Warning, dirty as fuck hack! Stupid ALSA.
    ptr = io->appl_ptr - ptr;
    rsound->last_ptr = io->appl_ptr;
 
@@ -202,24 +195,10 @@ static int rsound_poll_revents(snd_pcm_ioplug_t *io, struct pollfd *pfd,
 {
    snd_pcm_rsound_t *rsound = io->private_data;
 
-/*   if ( pfd[0].fd != rsound->rd->conn.socket )
-   {
-      fprintf(stderr, "*** WARNING: Given fd: %d, rsd fd: %d ***\n", pfd[0].fd, rsound->rd->conn.socket);
-      if ( rsound_start(io) < 0 )
-         fprintf(stderr, ">______<\n");
-   } */
-
    (void)pfd;
    (void)nfds;
 
-   
-/*   if ( rsound->rd->conn.socket <= 0 )
-      fprintf(stderr, "Guise ... wth?\n");
-*/
    assert ( rsound->rd->conn.socket > 0 );
-/*   if ( rsound->rd->conn.socket <= 0 )
-      return -EIO; */
-
 
    struct pollfd fd = {
       .fd = rsound->rd->conn.socket,
@@ -260,8 +239,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
 {
    (void) root;
 	snd_config_iterator_t i, next;
-	const char *host = "localhost";
-	const char *port = "12345";
+	const char *host = NULL;
+	const char *port = NULL;
 	int err;
 	snd_pcm_rsound_t *rsound;
 
@@ -309,21 +288,27 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
    }
 
 
-	rsd_set_param(rsound->rd, RSD_HOST, (void*)host);
-	if ( !rsound->rd->host )
-	{
-		SNDERR("Cannot allocate");
-		free(rsound);
-		return -ENOMEM;
-	}
+   if ( host )
+   {
+      rsd_set_param(rsound->rd, RSD_HOST, (void*)host);
+      if ( !rsound->rd->host )
+      {
+         SNDERR("Cannot allocate");
+         free(rsound);
+         return -ENOMEM;
+      }
+   }
    
-   rsd_set_param(rsound->rd, RSD_PORT, (void*)port);
-	if ( !rsound->rd->port )
-	{
-		SNDERR("Cannot allocate");
-		free(rsound);
-		return -ENOMEM;
-	}
+   if ( port )
+   {
+      rsd_set_param(rsound->rd, RSD_PORT, (void*)port);
+      if ( !rsound->rd->port )
+      {
+         SNDERR("Cannot allocate");
+         free(rsound);
+         return -ENOMEM;
+      }
+   }
 
    rsound->last_ptr = 0;
 	
