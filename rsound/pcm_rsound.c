@@ -288,7 +288,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
    }
 
 
-   if ( host )
+   if ( host && strlen(host) )
    {
       rsd_set_param(rsound->rd, RSD_HOST, (void*)host);
       if ( !rsound->rd->host )
@@ -299,7 +299,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(rsound)
       }
    }
    
-   if ( port )
+   if ( port && strlen(port) )
    {
       rsd_set_param(rsound->rd, RSD_PORT, (void*)port);
       if ( !rsound->rd->port )
