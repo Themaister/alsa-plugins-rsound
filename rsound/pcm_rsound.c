@@ -27,6 +27,7 @@ typedef struct snd_pcm_rsound
    rsound_t *rd;
    snd_pcm_uframes_t last_ptr;
    snd_pcm_ioplug_t io;
+   int frame_bytes;
 } snd_pcm_rsound_t;
 
 
@@ -46,7 +47,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    const char *buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
-   size *= io->channels * rsd_samplesize(rsound->rd);
+   size *= rsound->frame_bytes;
 
    ssize_t result = rsd_write(rsound->rd, buf, size);
    if ( result <= 0 )
@@ -54,7 +55,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
       rsound_stop(io);
       return -EIO;
    }
-   return snd_pcm_bytes_to_frames(io->pcm, result);
+   return result/rsound->frame_bytes;
 }
 
 static int rsound_start(snd_pcm_ioplug_t *io)
@@ -86,7 +87,7 @@ static snd_pcm_sframes_t rsound_pointer(snd_pcm_ioplug_t *io)
    }
 
    ptr = rsd_pointer(rsound->rd);	
-   ptr = snd_pcm_bytes_to_frames( io->pcm, ptr );
+   ptr /= rsound->frame_bytes;
 
    ptr = io->appl_ptr - ptr;
    rsound->last_ptr = io->appl_ptr;
@@ -191,7 +192,10 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 	{
       return err;
 	}
-   buffersize *= io->channels * rsd_samplesize(rsound->rd);
+
+   rsound->frame_bytes = io->channels * rsd_samplesize(rsound->rd);
+   
+   buffersize *= rsound->frame_bytes;
    int bufsiz = (int)buffersize;
    rsd_set_param(rsound->rd, RSD_BUFSIZE, &bufsiz);
 
@@ -206,7 +210,7 @@ static int rsound_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp)
    if ( ptr < 0 )
       ptr = 0;
    
-   *delayp = snd_pcm_bytes_to_frames(io->pcm, ptr);
+   *delayp = ptr / rsound->frame_bytes;
 
    return 0;
 }
