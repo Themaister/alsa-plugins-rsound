@@ -54,7 +54,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
       rsound_stop(io);
       return -EIO;
    }
-   return result / (io->channels * rsd_samplesize(rsound->rd));
+   return snd_pcm_bytes_to_frames(io->pcm, result);
 }
 
 static int rsound_start(snd_pcm_ioplug_t *io)
