@@ -46,7 +46,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
 {
    snd_pcm_rsound_t *rsound = io->private_data;
    const char *buf = (char*)areas->addr + (areas->first + areas->step * offset) / 8;
-   size *= io->channels * 2;
+   size *= io->channels * rsd_samplesize(rsound->rd);
 
    ssize_t result = rsd_write(rsound->rd, buf, size);
    if ( result <= 0 )
@@ -54,7 +54,7 @@ static snd_pcm_sframes_t rsound_write( snd_pcm_ioplug_t *io,
       rsound_stop(io);
       return -EIO;
    }
-   return result / (io->channels * 2);
+   return result / (io->channels * rsd_samplesize(rsound->rd));
 }
 
 static int rsound_start(snd_pcm_ioplug_t *io)
@@ -112,11 +112,16 @@ static int rsound_hw_constraint(snd_pcm_rsound_t *rsound)
 	snd_pcm_ioplug_t *io = &rsound->io;
 	static const snd_pcm_access_t access_list[] = { SND_PCM_ACCESS_RW_INTERLEAVED };
 
-	static const unsigned int formats[] = { SND_PCM_FORMAT_S16_LE };
+	static const unsigned int formats[] = {   SND_PCM_FORMAT_S16_LE,
+                                             SND_PCM_FORMAT_S16_BE, 
+                                             SND_PCM_FORMAT_U16_LE,
+                                             SND_PCM_FORMAT_U16_BE,
+                                             SND_PCM_FORMAT_U8,
+                                             SND_PCM_FORMAT_S8 };
 
 	int err;
 	
-   if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_FORMAT, 1, formats)) < 0 )
+   if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_FORMAT, 6, formats)) < 0 )
 		goto const_err;
 	if ((err = snd_pcm_ioplug_set_param_list(io, SND_PCM_IOPLUG_HW_ACCESS, 1, access_list)) < 0)
 		goto const_err;
@@ -141,10 +146,34 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 {
 	snd_pcm_rsound_t *rsound = io->private_data;
 
-	if ( io->format != SND_PCM_FORMAT_S16_LE )
-	{
-		return -EINVAL;
-	}
+   int format;
+
+   switch ( io->format )
+   {
+      case SND_PCM_FORMAT_S16_LE:
+         format = RSD_S16_LE;
+         break;
+      case SND_PCM_FORMAT_S16_BE:
+         format = RSD_S16_BE;
+         break;
+      case SND_PCM_FORMAT_U16_LE:
+         format = RSD_U16_LE;
+         break;
+      case SND_PCM_FORMAT_U16_BE:
+         format = RSD_U16_BE;
+         break;
+      case SND_PCM_FORMAT_U8:
+         format = RSD_U8;
+         break;
+      case SND_PCM_FORMAT_S8:
+         format = RSD_S8;
+         break;
+      default:
+         return -EINVAL;
+   }
+
+   rsd_set_param(rsound->rd, RSD_FORMAT, &format);
+
 	if ( io->stream != SND_PCM_STREAM_PLAYBACK )
 	{
 		return -EINVAL;
@@ -162,7 +191,7 @@ static int rsound_hw_params(snd_pcm_ioplug_t *io,
 	{
       return err;
 	}
-   buffersize *= io->channels * 2;
+   buffersize *= io->channels * rsd_samplesize(rsound->rd);
    int bufsiz = (int)buffersize;
    rsd_set_param(rsound->rd, RSD_BUFSIZE, &bufsiz);
 
