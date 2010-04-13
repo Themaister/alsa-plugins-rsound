@@ -1,4 +1,4 @@
-SUBDIRS = oss rsound mix usb_stream arcam-av doc
+SUBDIRS = oss rsound mix usb_stream arcam-av doc roar
 if HAVE_JACK
 SUBDIRS += jack
 endif

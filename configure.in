@@ -157,6 +157,7 @@ AC_OUTPUT([
 	Makefile
 	oss/Makefile
    rsound/Makefile
+   roar/Makefile
 	pph/Makefile
 	jack/Makefile
 	pulse/Makefile
