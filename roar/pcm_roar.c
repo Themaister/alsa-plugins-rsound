@@ -36,74 +36,48 @@
 #include "roar.h"
 
 
-
-
 ////////////////
-/// Might work
+/// OK
 ////////////////
 static int roar_pcm_start ( snd_pcm_ioplug_t *io )
 {
    struct roar_alsa_pcm * self = io->private_data;
-   fprintf(stderr, "start.\n");
 
    ROAR_DBG("roar_pcm_start(*) = ?");
 
-   /*if ( self->stream_opened ) {
-      fprintf(stderr, "Shouldn't happen.\n");
-      roar_vio_close(&(self->stream_vio));
-      self->stream_opened = 0;
-   }*/
 
    if ( self->stream_opened )
-   {
       return 0;
-   }
-
-   fprintf(stderr, "Rate: %d, Chans: %d, Bits: %d, Codec: %d\n", self->info.rate,
-               self->info.channels, self->info.bits, self->info.codec);
-
-   /*if ( roar_vio_simple_new_stream_obj(&(self->stream_vio), &(self->roar.con), &(self->stream),
-            self->info.rate, self->info.channels, self->info.bits, self->info.codec,
-            ROAR_DIR_PLAY
-            ) == -1 ) {
-   
-      return -EINVAL;
-   }*/
 
    if ( roar_vio_simple_stream( &(self->stream_vio), self->info.rate, 
                         self->info.channels, self->info.bits, self->info.codec,
-                        NULL, ROAR_DIR_PLAY, "lulz" ) == -1 )
+                        NULL, ROAR_DIR_PLAY, "ALSA plugin" ) == -1 )
    {
       return -EINVAL;
    }
 
    self->stream_opened = 1;
    self->writec = 0;
-   
-   fprintf(stderr, "Finished start.\n");
 
    return 0;
 }
 
 ///////////////
-/// Might work
+/// OK
 //////////////
 static int roar_pcm_stop ( snd_pcm_ioplug_t *io )
 {
+   struct roar_alsa_pcm * self = io->private_data;
+   if ( !self->stream_opened )
+      return 0;
+
    ROAR_DBG("roar_pcm_stop(*) = 0");
 
-   struct roar_alsa_pcm * self = io->private_data;
-   if ( self->stream_opened )
-   {
-      roar_vio_close(&(self->stream_vio));
-      self->stream_opened = 0;
-   }
+   roar_vio_close(&(self->stream_vio));
+   self->stream_opened = 0;
 
    return 0;
 }
-
-
-
 
 /////////////////
 // OK
@@ -150,7 +124,6 @@ static int roar_hw_constraint(struct roar_alsa_pcm * self) {
       return ret;
 
    ROAR_DBG("roar_hw_constraint(*) = 0");
-   fprintf(stderr, "Finished hw_constraint!\n");
 
    return 0;
 }
@@ -210,7 +183,6 @@ static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
 /// Prepare means start() :')
 //////////////////////////////
 static int roar_pcm_prepare(snd_pcm_ioplug_t *io) {
-   fprintf(stderr, "prepare.\n");
    ROAR_DBG("roar_pcm_prepare(*) = 0");
    return roar_pcm_start(io);
 }
@@ -249,12 +221,10 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
          self->info.bits  = 16;
          break;
       default:
-         fprintf(stderr, "WAT!\n");
-         return-EINVAL;
+         return -EINVAL;
    }
 
    ROAR_DBG("roar_pcm_hw_params(*) = 0");
-   fprintf(stderr, "Finished hw_params.\n");
    return 0;
 }
 
@@ -355,9 +325,6 @@ SND_PCM_PLUGIN_DEFINE_FUNC(roar) {
    *pcmp = self->io.pcm;
 
    ROAR_DBG("SND_PCM_PLUGIN_DEFINE_FUNC(roar) = 0");
-
-
-   fprintf(stderr, "Finished init!\n");
 
    return 0;
 }
