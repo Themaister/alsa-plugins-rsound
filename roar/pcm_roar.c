@@ -58,6 +58,9 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
  self->stream_opened = 1;
  self->writec = 0;
 
+ self->bufptr = 0;
+ pthread_create(self->thread, NULL, roar_thread, self);
+
  return 0;
 }
 
@@ -76,6 +79,9 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
  self->stream_opened = 0;
 
  ROAR_DBG("roar_pcm_stop(*) = 0");
+
+ pthread_cancel(self->thread);
+ pthread_join(self->thread, NULL);
 
  return 0;
 }
@@ -148,22 +154,24 @@ static int roar_hw_constraint(struct roar_alsa_pcm * self) {
  return 0;
 }
 
-
-///////////////////////////////
-/// TODO: Needs to be implemented
-///////////////////////////////
-// This hacky hack should not be used, since apparently, using this, ALSA will think the audio buffer is always empty (?),
-// leading to completely broken blocking audio which will only work with audio players.
-// Will need a method to determine how much buffer data is available to write to the roar buffer without blocking.
-// We therefore also need to know the buffersize that ALSA uses.
-
 // Referring to alsa-lib/src/pcm/pcm_ioplug.c : snd_pcm_ioplug_hw_ptr_update
 static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
  struct roar_alsa_pcm * self = io->private_data;
 
  ROAR_DBG("roar_pcm_pointer(*) = ?");
 
- return snd_pcm_bytes_to_frames(io->pcm, self->writec);
+ int ptr;
+ if ( io->appl_ptr < self->last_ptr )
+ {
+    roar_pcm_stop(io);
+    roar_pcm_start(io);
+ }
+
+ ptr = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
+ ptr = io->appl_ptr - ptr;
+ self->last_ptr = io->appl_ptr;
+
+ return ptr;
 }
 
 // TODO: FIXME: add support for reading data!
@@ -198,16 +206,13 @@ static snd_pcm_sframes_t roar_pcm_transfer(snd_pcm_ioplug_t *io,
 }
 
 
-///////////////////////////////
-/// TODO: Needs to be implemented
-///////////////////////////////
 static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
- (void)io;
+ struct roar_alsa_pcm * self = io->private_data;
 
  ROAR_DBG("roar_pcm_delay(*) = ?");
 
  // TODO: We need to set *delayp the latency in frames.
- *delayp = 0;
+ *delayp = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
 
  return 0;
 }
@@ -220,8 +225,6 @@ static int roar_pcm_prepare(snd_pcm_ioplug_t *io) {
 
 static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
  struct roar_alsa_pcm * self = io->private_data;
-
- (void) params;
 
  ROAR_DBG("roar_pcm_hw_params(*) = ?");
 
@@ -297,6 +300,16 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
     return-EINVAL;
  }
 
+ snd_pcm_uframes_t buffersize;
+ int err;
+
+ if ((err = snd_pcm_hw_params_get_buffer_size(params, &buffersize) < 0))
+    return err;
+
+ self->bufsize = snd_pcm_frames_to_bytes(io->pcm, buffersize);
+ self->buffer = malloc(self->bufsize);
+ self->bufptr = 0;
+
  ROAR_DBG("roar_pcm_hw_params(*) = 0");
  return 0;
 }
@@ -308,6 +321,7 @@ static int roar_pcm_close (snd_pcm_ioplug_t * io) {
 
  roar_disconnect(&(self->roar.con));
 
+ free(self->buffer);
  free(self);
 
  return 0;
@@ -388,6 +402,10 @@ SND_PCM_PLUGIN_DEFINE_FUNC(roar) {
   free(self);
   return ret;
  }
+
+ pthread_mutex_init(&(self->lock), NULL);
+ pthread_mutex_init(&(self->cond_lock), NULL);
+ pthread_cond_init(&(self->cond), NULL);
 
  if ( (ret = roar_hw_constraint(self)) < 0 ) {
   snd_pcm_ioplug_delete(&(self->io));

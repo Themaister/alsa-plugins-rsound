@@ -42,6 +42,7 @@
 #include <alsa/global.h>
 #include <alsa/pcm_external.h>
 #include <alsa/control_external.h>
+#include <pthread.h>
 
 #define _as(x) (sizeof((x))/sizeof(*(x)))
 
@@ -57,6 +58,13 @@ struct roar_alsa_pcm {
  struct roar_vio_calls  stream_vio;
  int                    stream_opened;
  size_t                 writec;
+ size_t                 last_ptr;
+ char*                  buffer;
+ size_t                 bufsize;
+ size_t                 bufptr;
+ pthread_mutex_t        lock;
+ pthread_mutex_t        cond_lock;
+ pthread_cond_t         cond;
 };
 
 #endif
