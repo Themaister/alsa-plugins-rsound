@@ -189,7 +189,9 @@ static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
       roar_pcm_start(io);
    }
 
+   pthread_mutex_lock(&self->lock);
    ptr = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
+   pthread_mutex_unlock(&self->lock);
    //fprintf(stderr, "POINTER: %d\n", ptr);
    ptr = io->appl_ptr - ptr;
    self->last_ptr = io->appl_ptr;
