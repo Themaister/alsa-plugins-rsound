@@ -62,10 +62,16 @@ struct roar_alsa_pcm {
  char*                  buffer;
  size_t                 bufsize;
  size_t                 bufptr;
+ pthread_t              thread;
  pthread_mutex_t        lock;
  pthread_mutex_t        cond_lock;
  pthread_cond_t         cond;
+ int                    thread_active;
 };
+
+void roar_reset( struct roar_alsa_pcm* );
+void* roar_thread ( void * );
+size_t roar_write( struct roar_alsa_pcm*, const char*, size_t );
 
 #endif
 
