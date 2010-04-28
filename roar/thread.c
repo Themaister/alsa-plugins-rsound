@@ -12,7 +12,7 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size )
       if ( !self->thread_active )
          return 0;
 
-      fprintf(stderr, "%d + %d : %d\n", (int)self->bufptr, (int)size, (int)self->bufsize);
+      //fprintf(stderr, "%d + %d : %d\n", (int)self->bufptr, (int)size, (int)self->bufsize);
       pthread_mutex_lock(&self->lock);
       if ( self->bufptr + size <= self->bufsize  )
       {
@@ -67,6 +67,7 @@ void* roar_thread ( void * thread_data )
 
          pthread_testcancel();
          rc = roar_vio_write(&(self->stream_vio), self->buffer, CHUNK_SIZE);
+       //  fprintf(stderr, "Thread wrote %d\n", rc);
 
          /* If this happens, we should make sure that subsequent and current calls to rsd_write() will fail. */
          if ( rc < 0 )

@@ -54,6 +54,12 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
       return -EINVAL;
    }
 
+   int fd;
+   roar_vio_ctl(&(self->stream_vio), ROAR_VIO_CTL_GET_SELECT_WRITE_FH, &fd);
+   io->poll_fd = fd;
+
+   snd_pcm_ioplug_reinit_status(io);
+
    // Stream is now active, yay.
    self->stream_opened = 1;
    self->writec = 0;
@@ -74,6 +80,8 @@ void roar_reset(struct roar_alsa_pcm *self)
    self->stream_opened = 0;
    self->thread_active = 0;
    self->bufptr = 0;
+   self->last_ptr = 0;
+   self->writec = 0;
 }
 
 
@@ -87,7 +95,6 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
 
    ROAR_DBG("roar_pcm_stop(*) = 0");
 
-   roar_reset(self);
 
    if ( self->thread_active )
    {
@@ -96,6 +103,8 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
       pthread_join(self->thread, NULL);
    }
 
+   roar_reset(self);
+   
    return 0;
 }
 
@@ -181,6 +190,7 @@ static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
    }
 
    ptr = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
+   //fprintf(stderr, "POINTER: %d\n", ptr);
    ptr = io->appl_ptr - ptr;
    self->last_ptr = io->appl_ptr;
 
@@ -406,8 +416,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(roar) {
 
    self->io.version      = SND_PCM_IOPLUG_VERSION;
    self->io.name         = "RoarAudio Plugin";
-   self->io.poll_fd      = -1;
-   self->io.poll_events  =  0;
+/*   self->io.poll_fd      =  1; */
+   self->io.poll_events  =  POLLOUT;
    self->io.mmap_rw      =  0;
    self->io.callback     = &roar_pcm_callback;
    self->io.private_data =  self;
