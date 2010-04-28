@@ -12,6 +12,7 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size )
       if ( !self->thread_active )
          return 0;
 
+      fprintf(stderr, "%d + %d : %d\n", (int)self->bufptr, (int)size, (int)self->bufsize);
       pthread_mutex_lock(&self->lock);
       if ( self->bufptr + size <= self->bufsize  )
       {

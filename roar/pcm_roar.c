@@ -320,7 +320,8 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
    if ((err = snd_pcm_hw_params_get_buffer_size(params, &buffersize) < 0))
       return err;
 
-   self->bufsize = snd_pcm_frames_to_bytes(io->pcm, buffersize);
+   //self->bufsize = (size_t)snd_pcm_frames_to_bytes(io->pcm, buffersize);
+   self->bufsize = 4 * buffersize;
    self->buffer = malloc(self->bufsize);
    self->bufptr = 0;
 
