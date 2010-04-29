@@ -57,6 +57,7 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
    int fd;
    roar_vio_ctl(&(self->stream_vio), ROAR_VIO_CTL_GET_SELECT_WRITE_FH, &fd);
    io->poll_fd = fd;
+   io->poll_events = POLLOUT;
 
    snd_pcm_ioplug_reinit_status(io);
 
@@ -82,6 +83,8 @@ void roar_reset(struct roar_alsa_pcm *self)
    self->bufptr = 0;
    self->last_ptr = 0;
    self->writec = 0;
+   self->total_written = 0;
+   self->has_written = 0;
 }
 
 
@@ -238,7 +241,10 @@ static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
    ROAR_DBG("roar_pcm_delay(*) = ?");
 
    // TODO: We need to set *delayp the latency in frames.
-   *delayp = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
+   pthread_mutex_lock(&self->lock);
+   roar_drain(self);
+   *delayp = snd_pcm_bytes_to_frames(io->pcm, self->bytes_in_buffer);
+   pthread_mutex_unlock(&self->lock);
 
    return 0;
 }
@@ -333,7 +339,7 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
       return err;
 
    //self->bufsize = (size_t)snd_pcm_frames_to_bytes(io->pcm, buffersize);
-   self->bufsize = 4 * buffersize;
+   self->bufsize = self->info.bits * self->info.channels * buffersize / 8;
    self->buffer = malloc(self->bufsize);
    self->bufptr = 0;
 

@@ -43,6 +43,7 @@
 #include <alsa/pcm_external.h>
 #include <alsa/control_external.h>
 #include <pthread.h>
+#include <time.h>
 
 #define _as(x) (sizeof((x))/sizeof(*(x)))
 
@@ -67,11 +68,16 @@ struct roar_alsa_pcm {
  pthread_mutex_t        cond_lock;
  pthread_cond_t         cond;
  int                    thread_active;
+ int                    bytes_in_buffer;
+ int64_t                total_written;
+ int                    has_written;
+ struct timespec        start_tv;
 };
 
 void roar_reset( struct roar_alsa_pcm* );
 void* roar_thread ( void * );
 size_t roar_write( struct roar_alsa_pcm*, const char*, size_t );
+void roar_drain( struct roar_alsa_pcm* );
 
 #endif
 

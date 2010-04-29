@@ -6,6 +6,6 @@ AM_CFLAGS = -Wall -g -pthread @ALSA_CFLAGS@
 AM_LDFLAGS = -module -avoid-version -export-dynamic -no-undefined $(LDFLAGS_NOUNDEFINED)
 
 libasound_module_pcm_roar_la_SOURCES = pcm_roar.c thread.c
-libasound_module_pcm_roar_la_LIBADD = @ALSA_LIBS@ -lroar -lpthread
+libasound_module_pcm_roar_la_LIBADD = @ALSA_LIBS@ -lroar -lpthread -lrt
 
 

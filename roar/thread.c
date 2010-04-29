@@ -82,7 +82,19 @@ void* roar_thread ( void * thread_data )
             pthread_detach(pthread_self());
             pthread_exit(NULL);
          }
-         
+
+         if ( !self->has_written )
+         {
+            pthread_mutex_lock(&self->lock);
+            clock_gettime(CLOCK_MONOTONIC, &self->start_tv);
+            self->has_written = 1;
+            pthread_mutex_unlock(&self->lock);
+         }
+
+         pthread_mutex_lock(&self->lock);
+         self->total_written += rc;
+         pthread_mutex_unlock(&self->lock);
+
          /* "Drains" the buffer. This operation looks kinda expensive with large buffers, but hey. D: */
          pthread_mutex_lock(&self->lock);
          memmove(self->buffer, self->buffer + rc, self->bufsize - rc);
@@ -111,4 +123,34 @@ void* roar_thread ( void * thread_data )
 
    }
 }
+
+void roar_drain(struct roar_alsa_pcm *self)
+{
+   /* If the audio playback has started on the server we need to use timers. */
+   if ( self->has_written )
+   {
+      int64_t temp, temp2;
+
+/* Falls back to gettimeofday() when CLOCK_MONOTONIC is not supported */
+
+/* Calculates the amount of bytes that the server has consumed. */
+      struct timespec now_tv;
+      clock_gettime(CLOCK_MONOTONIC, &now_tv);
+      
+      temp = (int64_t)now_tv.tv_sec - (int64_t)self->start_tv.tv_sec;
+
+      temp *= self->info.rate * self->info.channels * self->info.bits / 8;
+
+      temp2 = (int64_t)now_tv.tv_nsec - (int64_t)self->start_tv.tv_nsec;
+      temp2 *= self->info.rate * self->info.channels * self->info.bits / 8;
+      temp2 /= 1000000000;
+      temp += temp2;
+      /* Calculates the amount of data we have in our virtual buffer. Only used to calculate delay. */
+      self->bytes_in_buffer = (int)((int64_t)self->total_written + (int64_t)self->bufptr - temp);
+   }
+   else
+      self->bytes_in_buffer = self->bufptr;
+}
+
+
 
