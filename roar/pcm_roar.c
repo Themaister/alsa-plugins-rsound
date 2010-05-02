@@ -55,9 +55,13 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
    }
 
    int fd;
-   roar_vio_ctl(&(self->stream_vio), ROAR_VIO_CTL_GET_SELECT_WRITE_FH, &fd);
-   io->poll_fd = fd;
-   io->poll_events = POLLOUT;
+   if ( roar_vio_ctl(&(self->stream_vio), 
+            io->stream == SND_PCM_STREAM_PLAYBACK ? ROAR_VIO_CTL_GET_SELECT_WRITE_FH :
+                                                    ROAR_VIO_CTL_GET_SELECT_READ_FH, &fd) != 1 )
+   {
+      io->poll_fd = fd;
+      io->poll_events = io->stream == SND_PCM_STREAM_PLAYBACK ? POLLOUT : POLLIN;
+   }
 
    snd_pcm_ioplug_reinit_status(io);
 
@@ -424,7 +428,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(roar) {
 
    self->io.version      = SND_PCM_IOPLUG_VERSION;
    self->io.name         = "RoarAudio Plugin";
-/*   self->io.poll_fd      =  1; */
+   self->io.poll_fd      =  -1;
    self->io.poll_events  =  POLLOUT;
    self->io.mmap_rw      =  0;
    self->io.callback     = &roar_pcm_callback;
