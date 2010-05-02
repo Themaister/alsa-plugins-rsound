@@ -36,8 +36,11 @@
 
 #include "roar.h"
 
-// Equvivalent to prepare(). Starts a stream. Also needs to reset the writec since pointer() will do funny
-// things without it. Will be called several times during a program!
+// Equvivalent to prepare(). Starts a stream. Might/will be called several times during a program!
+/////////////////////////////////////////////////
+// Status: Should be mostly complete. 
+// Condition for invalid fh is not solved here.
+////////////////////////////////////////////////
 static int roar_pcm_start (snd_pcm_ioplug_t * io) {
    struct roar_alsa_pcm * self = io->private_data;
 
@@ -54,14 +57,17 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
       return -EINVAL;
    }
 
-   int fd;
+   int fh;
    if ( roar_vio_ctl(&(self->stream_vio), 
             io->stream == SND_PCM_STREAM_PLAYBACK ? ROAR_VIO_CTL_GET_SELECT_WRITE_FH :
-                                                    ROAR_VIO_CTL_GET_SELECT_READ_FH, &fd) != 1 )
+                                                    ROAR_VIO_CTL_GET_SELECT_READ_FH, &fh) != 1 )
    {
-      io->poll_fd = fd;
+      io->poll_fd = fh;
       io->poll_events = io->stream == SND_PCM_STREAM_PLAYBACK ? POLLOUT : POLLIN;
    }
+
+   // Oh, no, what should we do here if roar_vio_ctl() fails to grab a valid fh to poll?
+   // In any case, ALSA will error out the next time it tries to poll() if we don't give it a valid fh.
 
    snd_pcm_ioplug_reinit_status(io);
 
@@ -70,8 +76,12 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
    self->writec = 0;
 
    self->bufptr = 0;
-   self->thread_active = 1;
-   pthread_create(&self->thread, NULL, roar_thread, self);
+   self->thread_active = 1; // We have to activate the thread before starting it, because the thread lives on that thread_active is 1.
+   if ( pthread_create(&self->thread, NULL, roar_thread, self) < 0 )
+   {
+      self->thread_active = 0;
+      return -1;
+   }
 
    return 0;
 }
@@ -95,6 +105,10 @@ void roar_reset(struct roar_alsa_pcm *self)
 
 // Simply stopping the stream. Will need to be restarted to play more.
 // Will be called several times together with roar_pcm_start()
+///////////////////////////////////////////////////
+// Status: Still needs some error checking for the pthread calls, but
+// should work.
+//////////////////////////////////////////////////
 static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
    struct roar_alsa_pcm * self = io->private_data;
 
@@ -115,6 +129,9 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
    return 0;
 }
 
+///////////////////////////////
+// Status: Should be complete.
+///////////////////////////////
 static int roar_hw_constraint(struct roar_alsa_pcm * self) {
    snd_pcm_ioplug_t *io = &(self->io);
    static const snd_pcm_access_t access_list[] = {
@@ -184,22 +201,35 @@ static int roar_hw_constraint(struct roar_alsa_pcm * self) {
 }
 
 // Referring to alsa-lib/src/pcm/pcm_ioplug.c : snd_pcm_ioplug_hw_ptr_update
+///////////////////////////////////////////////////////////
+// Status: Mostly complete, but uses a really nasty hack!
+///////////////////////////////////////////////////////////
 static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
    struct roar_alsa_pcm * self = io->private_data;
 
    ROAR_DBG("roar_pcm_pointer(*) = ?");
 
    int ptr;
+   // Did ALSA just call snd_pcm_reset() or something like that without calling the plugin? 
+   // We should restart our stream as well.
    if ( io->appl_ptr < self->last_ptr )
    {
       roar_pcm_stop(io);
       roar_pcm_start(io);
    }
 
+   // ALSA has a weird way of calculating how much data can be written to the audio buffer.
+   // It uses the formula:
+   // avail = bufsize + ptr - io->appl_ptr; (??!?)
+   // We really want this:
+   // avail = bufsize - ptr;
+   // This is the obvious way, so we have to manipulate ptr like this:
+   // ptr = io->appl_ptr - ptr;
+
    pthread_mutex_lock(&self->lock);
    ptr = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
    pthread_mutex_unlock(&self->lock);
-   //fprintf(stderr, "POINTER: %d\n", ptr);
+
    ptr = io->appl_ptr - ptr;
    self->last_ptr = io->appl_ptr;
 
@@ -207,6 +237,9 @@ static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
 }
 
 // TODO: FIXME: add support for reading data!
+//////////////////////////////////////////////////
+// Status: For writing, this should be complete.
+//////////////////////////////////////////////////
 static snd_pcm_sframes_t roar_pcm_transfer(snd_pcm_ioplug_t *io,
       const snd_pcm_channel_area_t *areas,
       snd_pcm_uframes_t offset,
@@ -238,7 +271,10 @@ static snd_pcm_sframes_t roar_pcm_transfer(snd_pcm_ioplug_t *io,
    return size;
 }
 
-
+///////////////////////////////////////////////////////////////////
+// Status: Still missing proper delay measurements from the roar server. 
+// Only uses a blind timer now. In ideal conditions, this will work well.
+///////////////////////////////////////////////////////////////////
 static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
    struct roar_alsa_pcm * self = io->private_data;
 
@@ -253,12 +289,20 @@ static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
    return 0;
 }
 
+////////////////////
+// Status: Complete
+////////////////////
 static int roar_pcm_prepare(snd_pcm_ioplug_t *io) {
    ROAR_DBG("roar_pcm_prepare(*) = ?");
 
    return roar_pcm_start(io);
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Status: This should be mostly complete.
+// I'm not sure if hw_params can be called several times during one stream without stop() start() in between. 
+// This will mean a memory leak, and possibly breakage should the buffer size change itself.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params) {
    struct roar_alsa_pcm * self = io->private_data;
 
@@ -351,6 +395,10 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
    return 0;
 }
 
+///////////////////////////////////
+// Status: This should be complete. 
+// This is the last cleanup function to be called by ALSA.
+///////////////////////////////////
 static int roar_pcm_close (snd_pcm_ioplug_t * io) {
    struct roar_alsa_pcm * self = io->private_data;
 
