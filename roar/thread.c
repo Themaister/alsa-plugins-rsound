@@ -37,7 +37,7 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size ) {
  return size;
 }
 
-#define TEST_CANCEL do { \
+#define _TEST_CANCEL() do { \
  if ( !self->thread_active ) \
   goto test_quit; \
 } while(0)
@@ -53,7 +53,7 @@ void* roar_thread ( void * thread_data ) {
  /* Two loops! :3 Beware! */
  while(1) {
   while(1) {
-   TEST_CANCEL;
+   _TEST_CANCEL();
    // We ask the server to send its latest backend data. Do not really care about errors atm.
    // We only bother to check after 1 sec of audio has been played, as it might be quite inaccurate in the start of the stream.
 
@@ -69,7 +69,7 @@ void* roar_thread ( void * thread_data ) {
 
    /* If this happens, we should make sure that subsequent and current calls to rsd_write() will fail. */
    if ( rc < 0 ) {
-    TEST_CANCEL;
+    _TEST_CANCEL();
     roar_reset(self);
 
     /* Wakes up a potentially sleeping fill_buffer() */
