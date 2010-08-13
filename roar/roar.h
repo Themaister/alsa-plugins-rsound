@@ -2,6 +2,7 @@
 
 /*
  *      Copyright (C) Philipp 'ph3-der-loewe' Schafft - 2010
+ *      Copyright (C) Hans-Kristian 'maister' Arntzen - 2010
  *
  *  This file is part of libroar a part of RoarAudio,
  *  a cross-platform sound system for both, home and professional use.
