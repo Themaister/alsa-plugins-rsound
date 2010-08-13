@@ -75,7 +75,7 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
 
  self->bufptr = 0;
  self->thread_active = 1; // We have to activate the thread before starting it, because the thread lives on that thread_active is 1.
- if ( pthread_create(&self->thread, NULL, roar_thread, self) < 0 ) {
+ if ( pthread_create(&(self->thread), NULL, roar_thread, self) < 0 ) {
   self->thread_active = 0;
   return -1;
  }
@@ -114,7 +114,7 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
 
  if ( self->thread_active ) {
   self->thread_active = 0;
-  pthread_cond_signal(&self->cond);
+  pthread_cond_signal(&(self->cond));
   pthread_join(self->thread, NULL);
  }
 
@@ -208,9 +208,9 @@ static snd_pcm_sframes_t roar_pcm_pointer(snd_pcm_ioplug_t *io) {
  // This is the obvious way, so we have to manipulate ptr like this:
  // ptr = io->appl_ptr - ptr;
 
- pthread_mutex_lock(&self->lock);
+ pthread_mutex_lock(&(self->lock));
  ptr = snd_pcm_bytes_to_frames(io->pcm, self->bufptr);
- pthread_mutex_unlock(&self->lock);
+ pthread_mutex_unlock(&(self->lock));
 
  ptr = io->appl_ptr - ptr;
  self->last_ptr = io->appl_ptr;
