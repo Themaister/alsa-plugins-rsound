@@ -40,7 +40,7 @@
 
 
 // Writes to the FIFO buffer. Waits until there is room to write.
-size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size ) {
+size_t roar_write(struct roar_alsa_pcm *self, const char *buf, size_t size) {
  /* Wait until we have a ready buffer */
  for (;;) {
   /* Should the thread be shut down while we're running, return with error */
@@ -80,7 +80,7 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size ) {
 
 // Attemps to drain the buffer at all times and write to libroar.
 // If there is no data, it will wait for roar_write() to fill up more data.
-void* roar_thread ( void * thread_data ) {
+void* roar_thread (void * thread_data) {
  /* We share data between thread and callable functions */
  struct roar_alsa_pcm *self = thread_data;
  int rc;

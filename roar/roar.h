@@ -74,10 +74,10 @@ struct roar_alsa_pcm {
  struct timespec        start_tv;
 };
 
-void roar_reset( struct roar_alsa_pcm* );
-void* roar_thread ( void * );
-size_t roar_write( struct roar_alsa_pcm*, const char*, size_t );
-void roar_drain( struct roar_alsa_pcm* );
+void roar_reset(struct roar_alsa_pcm * self);
+void* roar_thread (void * thread_data);
+size_t roar_write(struct roar_alsa_pcm * self, const char * buf, size_t size);
+void roar_drain(struct roar_alsa_pcm * self);
 
 #endif
 
