@@ -1,4 +1,4 @@
-//pcm.c:
+//pcm_roar.c:
 
 /*
  *      Copyright (C) Philipp 'ph3-der-loewe' Schafft - 2010
@@ -119,7 +119,7 @@ static int roar_pcm_stop (snd_pcm_ioplug_t *io) {
 
    if ( self->thread_active )
    {
-      pthread_cancel(self->thread);
+      self->thread_active = 0;
       pthread_cond_signal(&self->cond);
       pthread_join(self->thread, NULL);
    }
@@ -174,16 +174,6 @@ static int roar_hw_constraint(struct roar_alsa_pcm * self) {
    if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_RATE, 8000, 192000)) < 0 )
       return ret;
 
-#if 0
-   if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1, 4294967295U)) < 0 )
-      return ret;
-
-   if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIODS, 1, 4294967295U)) < 0 )
-      return ret;
-
-   if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1, 4294967295U)) < 0 )
-      return ret;
-#else
    // We shouldn't let ALSA use extremely low or high values, it will kill a kitty most likely. :v
    if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_PERIOD_BYTES, 1 << 6, 1 << 18)) < 0 )
       return ret;
@@ -193,7 +183,6 @@ static int roar_hw_constraint(struct roar_alsa_pcm * self) {
 
    if ( (ret = snd_pcm_ioplug_set_param_minmax(io, SND_PCM_IOPLUG_HW_BUFFER_BYTES, 1 << 13, 1 << 24)) < 0 )
       return ret;
-#endif
 
    ROAR_DBG("roar_hw_constraint(*) = 0");
 
@@ -255,7 +244,6 @@ static snd_pcm_sframes_t roar_pcm_transfer(snd_pcm_ioplug_t *io,
    // Weird ALSA stuff.
    buf = (char *)areas->addr + (areas->first + areas->step * offset) / 8;
 
-//   ret = roar_vio_write(&(self->stream_vio), buf, len);
    ret = roar_write(self, buf, len);
 
    if ( ret != -1 ) {
@@ -406,6 +394,10 @@ static int roar_pcm_close (snd_pcm_ioplug_t * io) {
 
    roar_disconnect(&(self->roar.con));
 
+   pthread_mutex_destroy(&self->lock);
+   pthread_mutex_destroy(&self->cond_lock);
+   pthread_cond_destroy(&self->cond);
+
    free(self->buffer);
    free(self);
 
@@ -415,20 +407,11 @@ static int roar_pcm_close (snd_pcm_ioplug_t * io) {
 static snd_pcm_ioplug_callback_t roar_pcm_callback = {
    .start                  = roar_pcm_start,
    .stop                   = roar_pcm_stop,
-   .drain                  = NULL,
    .pointer                = roar_pcm_pointer,
    .transfer               = roar_pcm_transfer,
    .delay                  = roar_pcm_delay,
-   .poll_descriptors_count = NULL,
-   .poll_descriptors       = NULL,
-   .poll_revents           = NULL,
    .prepare                = roar_pcm_prepare,
    .hw_params              = roar_pcm_hw_params,
-   .hw_free                = NULL,
-   .sw_params              = NULL,
-   .pause                  = NULL,
-   .resume                 = NULL,
-   .dump                   = NULL,
    .close                  = roar_pcm_close,
 };
 

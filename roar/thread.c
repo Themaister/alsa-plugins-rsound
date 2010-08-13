@@ -22,6 +22,7 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size )
       }
       pthread_mutex_unlock(&self->lock);
       
+      pthread_cond_signal(&self->cond);
       /* Sleeps until we can write to the FIFO. */
       pthread_mutex_lock(&self->cond_lock);
       pthread_cond_wait(&self->cond, &self->cond_lock);
@@ -38,6 +39,11 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size )
 
    return size;
 }
+
+#define TEST_CANCEL do { \
+   if ( !self->thread_active ) \
+    goto test_quit; \
+} while(0)
 
 // Attemps to drain the buffer at all times and write to libroar.
 // If there is no data, it will wait for roar_write() to fill up more data.
@@ -67,14 +73,13 @@ void* roar_thread ( void * thread_data )
          }
          pthread_mutex_unlock(&self->lock);
 
-         pthread_testcancel();
+         TEST_CANCEL;
          rc = roar_vio_write(&(self->stream_vio), self->buffer, CHUNK_SIZE);
-       //  fprintf(stderr, "Thread wrote %d\n", rc);
 
          /* If this happens, we should make sure that subsequent and current calls to rsd_write() will fail. */
          if ( rc < 0 )
          {
-            pthread_testcancel();
+            TEST_CANCEL;
             roar_reset(self);
 
             /* Wakes up a potentially sleeping fill_buffer() */
@@ -109,9 +114,10 @@ void* roar_thread ( void * thread_data )
       }
 
       /* If we're still good to go, sleep. We are waiting for fill_buffer() to fill up some data. */
-      pthread_testcancel();
+test_quit:
       if ( self->thread_active )
       {
+         pthread_cond_signal(&self->cond);
          pthread_mutex_lock(&self->cond_lock);
          pthread_cond_wait(&self->cond, &self->cond_lock);
          pthread_mutex_unlock(&self->cond_lock);
