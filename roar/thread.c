@@ -21,9 +21,9 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size ) {
 
   pthread_cond_signal(&(self->cond));
   /* Sleeps until we can write to the FIFO. */
-  pthread_mutex_lock(&(self->cond)_lock);
-  pthread_cond_wait(&(self->cond), &(self->cond)_lock);
-  pthread_mutex_unlock(&(self->cond)_lock);
+  pthread_mutex_lock(&(self->cond_lock));
+  pthread_cond_wait(&(self->cond), &(self->cond_lock));
+  pthread_mutex_unlock(&(self->cond_lock));
  }
 
  pthread_mutex_lock(&(self->lock));
@@ -82,7 +82,7 @@ void* roar_thread ( void * thread_data ) {
 
    if ( !self->has_written ) {
     pthread_mutex_lock(&(self->lock));
-    clock_gettime(CLOCK_MONOTONIC, &(self->start)_tv);
+    clock_gettime(CLOCK_MONOTONIC, &(self->start_tv));
     self->has_written = 1;
     pthread_mutex_unlock(&(self->lock));
    }
@@ -106,9 +106,9 @@ void* roar_thread ( void * thread_data ) {
 test_quit:
   if ( self->thread_active ) {
    pthread_cond_signal(&(self->cond));
-   pthread_mutex_lock(&(self->cond)_lock);
-   pthread_cond_wait(&(self->cond), &(self->cond)_lock);
-   pthread_mutex_unlock(&(self->cond)_lock);
+   pthread_mutex_lock(&(self->cond_lock));
+   pthread_cond_wait(&(self->cond), &(self->cond_lock));
+   pthread_mutex_unlock(&(self->cond_lock));
   } else {
    /* Abandon the ship, chap. */
    pthread_cond_signal(&(self->cond));

@@ -382,7 +382,7 @@ static int roar_pcm_close (snd_pcm_ioplug_t * io) {
  roar_disconnect(&(self->roar.con));
 
  pthread_mutex_destroy(&(self->lock));
- pthread_mutex_destroy(&(self->cond)_lock);
+ pthread_mutex_destroy(&(self->cond_lock));
  pthread_cond_destroy(&(self->cond));
 
  free(self->buffer);
