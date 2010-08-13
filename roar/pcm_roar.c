@@ -352,7 +352,7 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
    self->info.bits  = 24;
    break;
   default:
-   return-EINVAL;
+   return -EINVAL;
  }
 
  snd_pcm_uframes_t buffersize;
@@ -361,9 +361,11 @@ static int roar_pcm_hw_params(snd_pcm_ioplug_t *io, snd_pcm_hw_params_t *params)
  if ((err = snd_pcm_hw_params_get_buffer_size(params, &buffersize) < 0))
   return err;
 
- //self->bufsize = (size_t)snd_pcm_frames_to_bytes(io->pcm, buffersize);
+ //self->bufsize = snd_pcm_frames_to_bytes(io->pcm, buffersize);
  self->bufsize = self->info.bits * self->info.channels * buffersize / 8;
  self->buffer = malloc(self->bufsize);
+ if (self->buffer == NULL)
+  return -1;
  self->bufptr = 0;
 
  ROAR_DBG("roar_pcm_hw_params(*) = 0");
