@@ -12,27 +12,27 @@ size_t roar_write( struct roar_alsa_pcm *self, const char *buf, size_t size ) {
    return 0;
 
   //fprintf(stderr, "%d + %d : %d\n", (int)self->bufptr, (int)size, (int)self->bufsize);
-  pthread_mutex_lock(&self->lock);
+  pthread_mutex_lock(&(self->lock));
   if (self->bufptr + size <= self->bufsize) {
-   pthread_mutex_unlock(&self->lock);
+   pthread_mutex_unlock(&(self->lock));
    break;
   }
-  pthread_mutex_unlock(&self->lock);
+  pthread_mutex_unlock(&(self->lock));
 
-  pthread_cond_signal(&self->cond);
+  pthread_cond_signal(&(self->cond));
   /* Sleeps until we can write to the FIFO. */
-  pthread_mutex_lock(&self->cond_lock);
-  pthread_cond_wait(&self->cond, &self->cond_lock);
-  pthread_mutex_unlock(&self->cond_lock);
+  pthread_mutex_lock(&(self->cond)_lock);
+  pthread_cond_wait(&(self->cond), &(self->cond)_lock);
+  pthread_mutex_unlock(&(self->cond)_lock);
  }
 
- pthread_mutex_lock(&self->lock);
+ pthread_mutex_lock(&(self->lock));
  memcpy(self->buffer + self->bufptr, buf, size);
  self->bufptr += (int)size;
- pthread_mutex_unlock(&self->lock);
+ pthread_mutex_unlock(&(self->lock));
 
  /* Send signal to thread that buffer has been updated */
- pthread_cond_signal(&self->cond);
+ pthread_cond_signal(&(self->cond));
 
  return size;
 }
@@ -58,12 +58,12 @@ void* roar_thread ( void * thread_data ) {
    // We only bother to check after 1 sec of audio has been played, as it might be quite inaccurate in the start of the stream.
 
    /* If the buffer is empty or we've stopped the stream. Jump out of this for loop */
-   pthread_mutex_lock(&self->lock);
+   pthread_mutex_lock(&(self->lock));
    if ( self->bufptr < CHUNK_SIZE ) {
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&(self->lock));
     break;
    }
-   pthread_mutex_unlock(&self->lock);
+   pthread_mutex_unlock(&(self->lock));
 
    rc = roar_vio_write(&(self->stream_vio), self->buffer, CHUNK_SIZE);
 
@@ -73,7 +73,7 @@ void* roar_thread ( void * thread_data ) {
     roar_reset(self);
 
     /* Wakes up a potentially sleeping fill_buffer() */
-    pthread_cond_signal(&self->cond);
+    pthread_cond_signal(&(self->cond));
 
     /* This thread will not be joined, so detach. */
     pthread_detach(pthread_self());
@@ -81,37 +81,37 @@ void* roar_thread ( void * thread_data ) {
    }
 
    if ( !self->has_written ) {
-    pthread_mutex_lock(&self->lock);
-    clock_gettime(CLOCK_MONOTONIC, &self->start_tv);
+    pthread_mutex_lock(&(self->lock));
+    clock_gettime(CLOCK_MONOTONIC, &(self->start)_tv);
     self->has_written = 1;
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&(self->lock));
    }
 
-   pthread_mutex_lock(&self->lock);
+   pthread_mutex_lock(&(self->lock));
    self->total_written += rc;
-   pthread_mutex_unlock(&self->lock);
+   pthread_mutex_unlock(&(self->lock));
 
    /* "Drains" the buffer. This operation looks kinda expensive with large buffers, but hey. D: */
-   pthread_mutex_lock(&self->lock);
+   pthread_mutex_lock(&(self->lock));
    memmove(self->buffer, self->buffer + rc, self->bufsize - rc);
    self->bufptr -= rc;
-   pthread_mutex_unlock(&self->lock);
+   pthread_mutex_unlock(&(self->lock));
 
    /* Buffer has decreased, signal fill_buffer() */
-   pthread_cond_signal(&self->cond);
+   pthread_cond_signal(&(self->cond));
 
   }
 
   /* If we're still good to go, sleep. We are waiting for fill_buffer() to fill up some data. */
 test_quit:
   if ( self->thread_active ) {
-   pthread_cond_signal(&self->cond);
-   pthread_mutex_lock(&self->cond_lock);
-   pthread_cond_wait(&self->cond, &self->cond_lock);
-   pthread_mutex_unlock(&self->cond_lock);
+   pthread_cond_signal(&(self->cond));
+   pthread_mutex_lock(&(self->cond)_lock);
+   pthread_cond_wait(&(self->cond), &(self->cond)_lock);
+   pthread_mutex_unlock(&(self->cond)_lock);
   } else {
    /* Abandon the ship, chap. */
-   pthread_cond_signal(&self->cond);
+   pthread_cond_signal(&(self->cond));
    pthread_exit(NULL);
   }
 

@@ -256,10 +256,10 @@ static int roar_pcm_delay(snd_pcm_ioplug_t *io, snd_pcm_sframes_t *delayp) {
  ROAR_DBG("roar_pcm_delay(*) = ?");
 
  // TODO: We need to set *delayp the latency in frames.
- pthread_mutex_lock(&self->lock);
+ pthread_mutex_lock(&(self->lock));
  roar_drain(self);
  *delayp = snd_pcm_bytes_to_frames(io->pcm, self->bytes_in_buffer);
- pthread_mutex_unlock(&self->lock);
+ pthread_mutex_unlock(&(self->lock));
 
  return 0;
 }
@@ -381,9 +381,9 @@ static int roar_pcm_close (snd_pcm_ioplug_t * io) {
 
  roar_disconnect(&(self->roar.con));
 
- pthread_mutex_destroy(&self->lock);
- pthread_mutex_destroy(&self->cond_lock);
- pthread_cond_destroy(&self->cond);
+ pthread_mutex_destroy(&(self->lock));
+ pthread_mutex_destroy(&(self->cond)_lock);
+ pthread_cond_destroy(&(self->cond));
 
  free(self->buffer);
  free(self);
