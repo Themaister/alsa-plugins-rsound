@@ -73,7 +73,6 @@ static int roar_pcm_start (snd_pcm_ioplug_t * io) {
 
    // Stream is now active, yay.
    self->stream_opened = 1;
-   self->writec = 0;
 
    self->bufptr = 0;
    self->thread_active = 1; // We have to activate the thread before starting it, because the thread lives on that thread_active is 1.
@@ -96,7 +95,6 @@ void roar_reset(struct roar_alsa_pcm *self)
    self->thread_active = 0;
    self->bufptr = 0;
    self->last_ptr = 0;
-   self->writec = 0;
    self->total_written = 0;
    self->has_written = 0;
 }
@@ -246,14 +244,8 @@ static snd_pcm_sframes_t roar_pcm_transfer(snd_pcm_ioplug_t *io,
 
    ret = roar_write(self, buf, len);
 
-   if ( ret != -1 ) {
-      // We increment the written counter so that subsequent calls to pointer() will not cause
-      // the library to hang due to several quirks that ALSA uses to determine available size.
-      // This approach is bad, but is needed until pointer() is implemented correctly.
-      self->writec += ret;
-   } else {
+   if ( ret == -1 )
       return -EIO;
-   }
 
    ROAR_DBG("roar_pcm_transfer(*) = %lli", (long long int)size);
    return size;

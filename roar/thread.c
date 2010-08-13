@@ -60,20 +60,19 @@ void* roar_thread ( void * thread_data )
       
       for(;;)
       {
-         
+         TEST_CANCEL;
          // We ask the server to send its latest backend data. Do not really care about errors atm.
          // We only bother to check after 1 sec of audio has been played, as it might be quite inaccurate in the start of the stream.
          
          /* If the buffer is empty or we've stopped the stream. Jump out of this for loop */
          pthread_mutex_lock(&self->lock);
-         if ( self->bufptr < CHUNK_SIZE || !self->thread_active )
+         if ( self->bufptr < CHUNK_SIZE )
          {
             pthread_mutex_unlock(&self->lock);
             break;
          }
          pthread_mutex_unlock(&self->lock);
 
-         TEST_CANCEL;
          rc = roar_vio_write(&(self->stream_vio), self->buffer, CHUNK_SIZE);
 
          /* If this happens, we should make sure that subsequent and current calls to rsd_write() will fail. */
@@ -122,7 +121,7 @@ test_quit:
          pthread_cond_wait(&self->cond, &self->cond_lock);
          pthread_mutex_unlock(&self->cond_lock);
       }
-      /* Abort request, chap. */
+      /* Abandon the ship, chap. */
       else
       {
          pthread_cond_signal(&self->cond);

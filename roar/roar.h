@@ -58,7 +58,6 @@ struct roar_alsa_pcm {
  struct roar_stream     stream;
  struct roar_vio_calls  stream_vio;
  int                    stream_opened;
- size_t                 writec;
  size_t                 last_ptr;
  char*                  buffer;
  size_t                 bufsize;
@@ -67,9 +66,9 @@ struct roar_alsa_pcm {
  pthread_mutex_t        lock;
  pthread_mutex_t        cond_lock;
  pthread_cond_t         cond;
- int                    thread_active;
+ volatile int           thread_active;
  int                    bytes_in_buffer;
- int64_t                total_written;
+ volatile int64_t       total_written;
  int                    has_written;
  struct timespec        start_tv;
 };
