@@ -34,7 +34,7 @@
  *  them with any software that uses libesd, libartsc or libpulse*.
  */
 
-#define DEBUG
+//#define DEBUG
 
 #include "roar.h"
 #define CHUNK_SIZE 2048

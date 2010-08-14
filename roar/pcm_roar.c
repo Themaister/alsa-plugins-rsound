@@ -34,7 +34,7 @@
  *  them with any software that uses libesd, libartsc or libpulse*.
  */
 
-#define DEBUG
+//#define DEBUG
 #include "roar.h"
 
 // Equvivalent to prepare(). Starts a stream. Might/will be called several times during a program!
