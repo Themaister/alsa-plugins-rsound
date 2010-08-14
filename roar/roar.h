@@ -62,7 +62,7 @@ struct roar_alsa_pcm {
  size_t                 last_ptr;
  char*                  buffer;
  size_t                 bufsize;
- size_t                 bufptr;
+ volatile size_t        bufptr;
  pthread_t              thread;
  pthread_mutex_t        lock;
  pthread_mutex_t        cond_lock;

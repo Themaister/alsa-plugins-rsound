@@ -34,10 +34,10 @@
  *  them with any software that uses libesd, libartsc or libpulse*.
  */
 
-//#define DEBUG
+#define DEBUG
 
 #include "roar.h"
-#define CHUNK_SIZE 256
+#define CHUNK_SIZE 2048
 
 
 // Writes to the FIFO buffer. Waits until there is room to write.
