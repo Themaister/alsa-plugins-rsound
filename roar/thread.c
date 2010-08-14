@@ -34,6 +34,7 @@
  *  them with any software that uses libesd, libartsc or libpulse*.
  */
 
+//#define DEBUG
 
 #include "roar.h"
 #define CHUNK_SIZE 256
@@ -132,7 +133,7 @@ void* roar_thread (void * thread_data) {
    memmove(self->buffer, self->buffer + rc, self->bufsize - rc);
    self->bufptr -= rc;
    pthread_mutex_unlock(&(self->lock));
-   ROAR_DBG("roar_thread(*): Wrote data to vio. New bufptr: %d", (int)self->bufptr);
+   ROAR_DBG("roar_thread(*): Wrote data to vio. New bufptr: %i", (int)self->bufptr);
 
    /* Buffer has decreased, signal fill_buffer() */
    pthread_cond_signal(&(self->cond));
